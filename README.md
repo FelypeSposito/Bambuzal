@@ -165,6 +165,41 @@ Depois disso, cada pessoa do grupo preenche no app:
 > passa por ele), mas a primeira pessoa a entrar depois da hibernação
 > espera o serviço religar.
 
+## Passo 7 — Publicar uma atualização
+
+A partir da versão 0.2.0 o app se atualiza sozinho: ao abrir, ele
+consulta os Releases deste repositório, compara com a versão instalada
+e baixa a nova em segundo plano. A instalação acontece quando a pessoa
+clica em "Reiniciar agora", ou sozinha no próximo fechamento do app.
+
+Como o repositório é público, não é preciso token embutido no app.
+
+Para lançar uma versão nova:
+
+1. Suba o número da `version` no `package.json` (o updater compara por
+   esse campo — sem subir, ninguém recebe nada).
+2. Rode `npm run dist`.
+3. Crie um Release no GitHub com a tag `v<versão>` (ex: `v0.3.0`) e
+   anexe **três** arquivos da pasta `dist`:
+   - `Bambuzal-Setup-<versão>.exe`
+   - `Bambuzal-Setup-<versão>.exe.blockmap`
+   - `latest.yml`
+
+O `latest.yml` é o índice que o app lê; sem ele a atualização não
+acontece. O `.blockmap` permite baixar só as partes que mudaram, em
+vez do instalador inteiro.
+
+> O `artifactName` no `package.json` existe por um motivo específico:
+> o `latest.yml` referencia o instalador com hífens, e o GitHub troca
+> espaços por pontos ao anexar arquivos. Com o nome padrão
+> (`Bambuzal Setup 0.2.0.exe`) os dois divergiriam e o updater
+> procuraria um arquivo inexistente.
+
+Quem preferir automatizar pode gerar um token do GitHub com permissão
+de escrita no repositório, exportá-lo como `GH_TOKEN` e rodar
+`npm run release` — o electron-builder cria o Release e anexa os três
+arquivos sozinho.
+
 ## Estrutura de arquivos
 
 ```

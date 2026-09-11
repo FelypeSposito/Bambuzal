@@ -21,6 +21,7 @@
   "build": {
     "appId": "com.sposito.bambuzal",
     "productName": "Bambuzal",
+    "artifactName": "${productName}-Setup-${version}.${ext}",
     "publish": [
       {
         "provider": "github",
