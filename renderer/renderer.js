@@ -171,7 +171,17 @@ function clearError() {
   joinError.textContent = '';
 }
 
-const AVATAR_COLORS = ['#0a84ff', '#30d158', '#ff9f0a', '#ff375f', '#bf5af2', '#64d2ff', '#ffd60a'];
+// Fundos dos ícones. Todos escolhidos com luminância baixa o bastante
+// para o texto branco das iniciais continuar legível por cima — cores
+// muito claras ficam bonitas na paleta e ilegíveis no avatar.
+// A quantidade também importa: com poucas cores, pessoas diferentes
+// caem na mesma com frequência, já que colorFor distribui por hash.
+const AVATAR_COLORS = [
+  '#0a84ff', '#1c7ed6', '#1098ad', '#0ca678', '#12b886',
+  '#2f9e44', '#30d158', '#74b816', '#f08c00', '#e8590c',
+  '#ff453a', '#e03131', '#ff375f', '#d6409f', '#bf5af2',
+  '#9d4edd', '#7048e8', '#5e5ce6', '#7f5af0', '#a2845e',
+];
 
 function colorFor(name) {
   let hash = 0;
