@@ -1,0 +1,26 @@
+# Blueprint da Render: descreve o serviço para não precisar preencher
+# formulário no painel. Na Render, escolha "New > Blueprint" e aponte
+# para o repositório — ela lê este arquivo.
+#
+# As variáveis abaixo estão marcadas com "sync: false" de propósito:
+# isso faz a Render PERGUNTAR o valor de cada uma no momento do deploy,
+# em vez de lê-las daqui. Assim nenhuma chave entra no repositório.
+
+services:
+  - type: web
+    name: voicechat-token-server
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: LIVEKIT_URL
+        sync: false
+      - key: LIVEKIT_API_KEY
+        sync: false
+      - key: LIVEKIT_API_SECRET
+        sync: false
+      - key: ROOM_PASSWORD
+        sync: false

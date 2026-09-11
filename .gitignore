@@ -1,0 +1,7 @@
+node_modules/
+dist/
+server/node_modules/
+server/.env
+
+# backup da UI original, feito antes da reescrita
+.backup-ui/

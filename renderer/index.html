@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob: wss: https:; connect-src 'self' http: https: wss: data: blob:;" />
+  <title>VoiceChatApp</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- ============================================================
+     Biblioteca de ícones.
+     Desenhados como traço (stroke) de 1.7px num grid de 24px, no
+     mesmo espírito dos SF Symbols: peso uniforme, pontas
+     arredondadas, nada de emoji.
+     ============================================================ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="ic-wave" viewBox="0 0 24 24">
+      <path d="M4 10.5v3M8 7.5v9M12 4.5v15M16 8.5v7M20 11v2" stroke-width="2" />
+    </symbol>
+    <symbol id="ic-mic" viewBox="0 0 24 24">
+      <path d="M12 3.25a2.75 2.75 0 0 0-2.75 2.75v6a2.75 2.75 0 0 0 5.5 0V6A2.75 2.75 0 0 0 12 3.25Z" />
+      <path d="M5.25 11.25a6.75 6.75 0 0 0 13.5 0M12 18v2.75" />
+    </symbol>
+    <symbol id="ic-mic-off" viewBox="0 0 24 24">
+      <path d="M14.75 6a2.75 2.75 0 0 0-5.5 0v2.5M9.25 12.6a2.75 2.75 0 0 0 5.14 1.26" />
+      <path d="M5.25 11.25a6.75 6.75 0 0 0 10.3 5.75M18.6 13.4c.1-.7.15-1.42.15-2.15M12 18v2.75" />
+      <path d="M4 3.6 20.4 20" stroke-width="1.9" />
+    </symbol>
+    <symbol id="ic-screen" viewBox="0 0 24 24">
+      <rect x="2.75" y="4.25" width="18.5" height="13" rx="2.5" />
+      <path d="M8.75 20.75h6.5M12 14.25V8.5M9.75 10.75 12 8.5l2.25 2.25" />
+    </symbol>
+    <symbol id="ic-screen-off" viewBox="0 0 24 24">
+      <rect x="2.75" y="4.25" width="18.5" height="13" rx="2.5" />
+      <path d="M8.75 20.75h6.5M9.5 10.75h5" />
+    </symbol>
+    <symbol id="ic-display" viewBox="0 0 24 24">
+      <rect x="2.75" y="4.25" width="18.5" height="13" rx="2.5" />
+      <path d="M8.75 20.75h6.5" />
+    </symbol>
+    <symbol id="ic-window" viewBox="0 0 24 24">
+      <rect x="3.25" y="4.75" width="17.5" height="14.5" rx="2.5" />
+      <path d="M3.25 9h17.5M6.25 6.9h.01M8.75 6.9h.01" stroke-width="1.9" />
+    </symbol>
+    <symbol id="ic-hangup" viewBox="0 0 24 24">
+      <path transform="rotate(135 12 12)" d="M21.5 16.9v2.6a1.9 1.9 0 0 1-2.07 1.9 18.8 18.8 0 0 1-8.2-2.92 18.5 18.5 0 0 1-5.7-5.7A18.8 18.8 0 0 1 2.6 4.55 1.9 1.9 0 0 1 4.5 2.5h2.6a1.9 1.9 0 0 1 1.9 1.63c.12.92.35 1.81.67 2.67a1.9 1.9 0 0 1-.43 2L8.1 9.94a15.2 15.2 0 0 0 5.7 5.7l1.14-1.14a1.9 1.9 0 0 1 2-.43c.86.32 1.75.55 2.67.67a1.9 1.9 0 0 1 1.63 1.93Z" />
+    </symbol>
+    <symbol id="ic-send" viewBox="0 0 24 24">
+      <path d="M12 19.5v-15M5.5 11 12 4.5 18.5 11" stroke-width="1.9" />
+    </symbol>
+    <symbol id="ic-close" viewBox="0 0 24 24">
+      <path d="m6.5 6.5 11 11M17.5 6.5l-11 11" stroke-width="1.9" />
+    </symbol>
+    <symbol id="ic-check" viewBox="0 0 24 24">
+      <path d="m5.5 12.5 4.5 4.5 8.5-10" stroke-width="2.4" />
+    </symbol>
+    <symbol id="ic-chevron" viewBox="0 0 24 24">
+      <path d="m9.5 5.5 7 6.5-7 6.5" stroke-width="1.9" />
+    </symbol>
+    <symbol id="ic-alert" viewBox="0 0 24 24">
+      <path d="M12 3.6 21.6 20.4H2.4L12 3.6Z" />
+      <path d="M12 10v4.2M12 17.4h.01" stroke-width="1.9" />
+    </symbol>
+    <symbol id="ic-signal" viewBox="0 0 24 24">
+      <path d="M4.5 15.5v3M9.5 11.5v7M14.5 7.5v11M19.5 4.5v14" stroke-width="1.9" />
+    </symbol>
+    <symbol id="ic-people" viewBox="0 0 24 24">
+      <circle cx="9.5" cy="8" r="3.25" />
+      <path d="M3.5 19.5a6 6 0 0 1 12 0M16.5 5.1a3.25 3.25 0 0 1 0 5.8M17.5 14.4a6 6 0 0 1 3 5.1" />
+    </symbol>
+  </defs>
+</svg>
+
+<div id="app">
+
+  <!-- Barra de título: área arrastável, já que a moldura nativa
+       do Windows foi escondida no main.js -->
+  <div class="titlebar">
+    <svg class="ic ic-sm" style="color:var(--blue)"><use href="#ic-wave" /></svg>
+    <span class="titlebar-title">VoiceChatApp</span>
+  </div>
+
+  <!-- ========================= Entrar ========================= -->
+  <section id="join-screen" class="screen">
+    <div class="join-card">
+      <div class="app-glyph">
+        <svg class="ic ic-lg"><use href="#ic-wave" /></svg>
+      </div>
+
+      <h1>VoiceChatApp</h1>
+      <p class="subtitle">Voz, texto e compartilhamento de tela para o seu grupo</p>
+
+      <form id="join-form" novalidate>
+        <div class="field">
+          <label for="user-name">Seu nome</label>
+          <input id="user-name" class="input" type="text" placeholder="Como você vai aparecer"
+                 autocomplete="off" maxlength="32" autofocus />
+        </div>
+
+        <div class="field">
+          <label for="room-name">Sala</label>
+          <input id="room-name" class="input" type="text" placeholder="geral"
+                 autocomplete="off" maxlength="48" value="geral" />
+          <p class="field-hint">Todo mundo precisa digitar o mesmo nome de sala.</p>
+        </div>
+
+        <div class="field">
+          <label for="server-url">Servidor de tokens</label>
+          <input id="server-url" class="input" type="text" autocomplete="off"
+                 value="http://localhost:3001" />
+        </div>
+
+        <div class="field">
+          <label for="room-password">Senha</label>
+          <input id="room-password" class="input" type="password" autocomplete="off"
+                 placeholder="Senha combinada do grupo" />
+          <p class="field-hint">Deixe em branco se o servidor não pedir senha.</p>
+        </div>
+
+        <button id="join-btn" class="btn btn-primary btn-block" type="submit">Entrar na sala</button>
+      </form>
+
+      <p id="join-error" class="error hidden"></p>
+    </div>
+  </section>
+
+  <!-- ======================= Sala aberta ======================= -->
+  <section id="main-screen" class="screen hidden">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <span class="hash">#</span>
+        <span id="current-room-name">geral</span>
+      </div>
+
+      <div class="section-title">
+        Na sala &middot; <span id="participant-count">1</span>
+      </div>
+
+      <div class="participants" id="participants-list"></div>
+
+      <!-- Painel de conexão: é aqui que dá pra ver latência e
+           qualidade real da transmissão -->
+      <div class="net" id="net-panel">
+        <div class="net-head" id="net-toggle" role="button" tabindex="0">
+          <span class="net-dot" id="net-dot"></span>
+          <span id="net-label">Conectando…</span>
+          <svg class="ic ic-sm chev"><use href="#ic-chevron" /></svg>
+        </div>
+        <div class="net-body">
+          <div class="net-row">Latência <b id="net-rtt">—</b></div>
+          <div class="net-row">Perda <b id="net-loss">—</b></div>
+          <div class="net-row">Envio <b id="net-up">—</b></div>
+          <div class="net-row">Recepção <b id="net-down">—</b></div>
+          <div class="net-row">Captura <b id="net-capture">—</b></div>
+          <div class="net-row">Enviado <b id="net-video">—</b></div>
+          <div class="net-row">Recebendo <b id="net-subs">—</b></div>
+        </div>
+      </div>
+
+      <div class="dock">
+        <button id="mic-btn" class="dock-btn on" title="Microfone (M)" aria-label="Microfone">
+          <svg class="ic"><use href="#ic-mic" /></svg>
+        </button>
+        <button id="screenshare-btn" class="dock-btn" title="Compartilhar tela" aria-label="Compartilhar tela">
+          <svg class="ic"><use href="#ic-screen" /></svg>
+        </button>
+        <button id="leave-btn" class="dock-btn danger" title="Sair da sala" aria-label="Sair da sala">
+          <svg class="ic"><use href="#ic-hangup" /></svg>
+        </button>
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="stage" id="video-area"></div>
+
+      <section class="chat">
+        <div class="chat-messages" id="chat-messages"></div>
+        <form id="chat-form" class="composer">
+          <input id="chat-text" class="input" type="text" placeholder="Escreva uma mensagem"
+                 autocomplete="off" maxlength="800" />
+          <button type="submit" class="send-btn" id="send-btn" disabled aria-label="Enviar">
+            <svg class="ic ic-sm"><use href="#ic-send" /></svg>
+          </button>
+        </form>
+      </section>
+    </main>
+  </section>
+</div>
+
+<!-- =================== Escolher o que compartilhar =================== -->
+<div id="source-picker" class="backdrop hidden" role="dialog" aria-modal="true"
+     aria-labelledby="picker-title">
+  <div class="sheet">
+    <header class="sheet-head">
+      <div>
+        <h2 id="picker-title">Compartilhar tela</h2>
+        <p>Escolha uma tela ou uma janela e confirme</p>
+      </div>
+      <button class="icon-btn" id="close-picker" aria-label="Fechar">
+        <svg class="ic ic-sm"><use href="#ic-close" /></svg>
+      </button>
+    </header>
+
+    <div class="segmented" role="tablist">
+      <button class="seg active" data-tab="screen" role="tab">
+        <svg class="ic ic-sm"><use href="#ic-display" /></svg>
+        Telas <span class="count" id="count-screen"></span>
+      </button>
+      <button class="seg" data-tab="window" role="tab">
+        <svg class="ic ic-sm"><use href="#ic-window" /></svg>
+        Janelas <span class="count" id="count-window"></span>
+      </button>
+    </div>
+
+    <div class="picker-options">
+      <label class="opt">
+        <span>Qualidade</span>
+        <select id="quality-select" class="select">
+          <option value="720p30">720p · 30 fps</option>
+          <option value="1080p30" selected>1080p · 30 fps</option>
+          <option value="1080p60">1080p · 60 fps</option>
+          <option value="1440p60">1440p · 60 fps</option>
+        </select>
+      </label>
+      <label class="opt">
+        <span>Prioridade</span>
+        <select id="mode-select" class="select">
+          <option value="maintain-framerate" selected>Fluidez (jogos, vídeo)</option>
+          <option value="maintain-resolution">Nitidez (texto, código)</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="sheet-body">
+      <div id="source-grid" class="source-grid"></div>
+      <p id="source-empty" class="empty-note hidden">Nada para mostrar aqui.</p>
+    </div>
+
+    <footer class="sheet-foot">
+      <span class="spacer" id="picker-selection">Nada selecionado</span>
+      <button id="cancel-picker" class="btn btn-secondary" type="button">Cancelar</button>
+      <button id="confirm-picker" class="btn btn-primary" type="button" disabled>Compartilhar</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ========================= Alerta genérico ========================= -->
+<div id="confirm-dialog" class="backdrop hidden" role="dialog" aria-modal="true"
+     aria-labelledby="confirm-title">
+  <div class="sheet sheet-sm">
+    <div class="alert-body">
+      <div class="alert-icon">
+        <svg class="ic ic-lg"><use href="#ic-alert" /></svg>
+      </div>
+      <h3 id="confirm-title">Sair da sala?</h3>
+      <p id="confirm-text">Você vai se desconectar da voz e do chat.</p>
+    </div>
+    <footer class="sheet-foot center">
+      <button id="confirm-cancel" class="btn btn-secondary" type="button">Cancelar</button>
+      <button id="confirm-ok" class="btn btn-danger" type="button">Sair</button>
+    </footer>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<script src="renderer.js"></script>
+</body>
+</html>
