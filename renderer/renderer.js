@@ -33,10 +33,8 @@ const shareView = $('share-view');
 const shareBar = $('share-bar');
 const stageBadgeText = $('stage-badge-text');
 const fullscreenBtn = $('fullscreen-btn');
-const streamVolWrap = $('stream-vol-wrap');
 const streamVolBtn = $('stream-vol-btn');
-const streamVol = $('stream-vol');
-const streamVolValue = $('stream-vol-value');
+const ctxMenu = $('ctx');
 
 const micBtn = $('mic-btn');
 const screenshareBtn = $('screenshare-btn');
@@ -131,8 +129,7 @@ const settings = {
   gain: 1, outVolume: 1,
   noise: true, echo: true, agc: true,
   chatCollapsed: false,
-  peers: {},          // identidade -> { volume, gate }
-  streamVolume: 1,
+  peers: {},          // identidade -> { volume, nr, streamVolume }
 };
 
 // ============================================================
@@ -193,10 +190,40 @@ function saveSettings() {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 }
 
+// Níveis de supressão de ruído.
+//
+// Os limiares são MULTIPLICADORES sobre o piso de ruído medido, não
+// valores absolutos. Essa é a diferença que faz o recurso funcionar:
+// um limiar fixo depende do microfone, do ganho e da distância de quem
+// fala — num setup corta a voz, noutro deixa o ruído passar inteiro.
+//
+//   open/close  quantas vezes acima do piso o som precisa estar
+//   hold        quanto tempo o portão fica aberto depois da última voz,
+//               para não fechar entre uma palavra e outra
+//   release     velocidade com que fecha (em segundos)
+const NR_LEVELS = {
+  off:    { label: 'Desligada' },
+  light:  { label: 'Leve',  hp: 80,  open: 2.4, close: 1.6, hold: 420, release: 0.20 },
+  medium: { label: 'Média', hp: 100, open: 3.2, close: 2.0, hold: 320, release: 0.13 },
+  strong: { label: 'Forte', hp: 140, open: 4.8, close: 2.8, hold: 240, release: 0.08 },
+};
+const NR_ORDER = ['off', 'light', 'medium', 'strong'];
+
 // Preferências por pessoa, guardadas pela identidade (que é estável,
 // ao contrário do nome de exibição e do sid)
 function peerPrefs(identity) {
-  if (!settings.peers[identity]) settings.peers[identity] = { volume: 1, gate: false };
+  const saved = settings.peers[identity];
+  if (!saved) {
+    settings.peers[identity] = { volume: 1, nr: 'off', streamVolume: 1 };
+  } else {
+    // Versões antigas guardavam um booleano "gate"
+    if (typeof saved.gate === 'boolean' && !saved.nr) {
+      saved.nr = saved.gate ? 'medium' : 'off';
+      delete saved.gate;
+    }
+    if (!saved.nr) saved.nr = 'off';
+    if (typeof saved.streamVolume !== 'number') saved.streamVolume = 1;
+  }
   return settings.peers[identity];
 }
 
@@ -475,13 +502,18 @@ function makeRow(p) {
     </button>
   `;
 
-  // O painel de áudio individual fica logo abaixo da linha
+  // Duas portas para o mesmo menu: o botão (descobrível) e o clique
+  // com o botão direito (rápido, para quem já sabe)
   const isLocal = room && p === room.localParticipant;
   if (!isLocal) {
-    el.querySelector('.vol-btn').addEventListener('click', (e) => {
+    const open = (e) => {
+      e.preventDefault();
       e.stopPropagation();
-      togglePeerPanel(el, p);
-    });
+      const r = el.getBoundingClientRect();
+      openPeerMenu(p, e.clientX || r.right, e.clientY || r.bottom);
+    };
+    el.querySelector('.vol-btn').addEventListener('click', open);
+    el.addEventListener('contextmenu', open);
   } else {
     el.querySelector('.vol-btn').remove();
   }
@@ -505,17 +537,25 @@ function updateRow(el, p) {
 
   if (!isLocal) {
     const prefs = peerPrefs(p.identity);
-    el.classList.toggle('turned-down', prefs.volume !== 1 || prefs.gate);
+    el.classList.toggle('turned-down', prefs.volume !== 1 || prefs.nr !== 'off');
   }
 }
 
-function makeTile() {
+function makeTile(p) {
   const el = document.createElement('div');
   el.className = 'tile';
   el.innerHTML = `
     <div class="tile-av"><span class="tile-ring"></span><span class="ini"></span></div>
     <div class="tile-foot"><span class="nm"></span><span class="mute-slot"></span></div>
   `;
+
+  if (room && p !== room.localParticipant) {
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      openPeerMenu(p, e.clientX, e.clientY);
+    });
+  }
+
   return el;
 }
 
@@ -554,61 +594,169 @@ function syncParticipants() {
 
 // ---------- Painel de áudio por pessoa ----------
 
-function closePeerPanels() {
-  participantsList.querySelectorAll('.peer-panel').forEach((n) => n.remove());
-  participantsList.querySelectorAll('.vol-open').forEach((n) => n.classList.remove('vol-open'));
+// ============================================================
+// Menu de contexto
+// ============================================================
+
+let ctxCleanup = null;
+
+function closeCtx() {
+  ctxMenu.classList.add('hidden');
+  ctxMenu.innerHTML = '';
+  if (ctxCleanup) { ctxCleanup(); ctxCleanup = null; }
 }
 
-function togglePeerPanel(rowEl, participant) {
-  const alreadyOpen = rowEl.classList.contains('vol-open');
-  closePeerPanels();
-  if (alreadyOpen) return;
+function buildCtxNode(item) {
+  if (item.type === 'header') {
+    const el = document.createElement('div');
+    el.className = 'ctx-header';
+    el.innerHTML = `
+      <span class="dot" style="background:${colorFor(item.label)}">${escapeHtml(initialsOf(item.label))}</span>
+      <span class="nm">${escapeHtml(item.label)}</span>
+    `;
+    return el;
+  }
 
-  const prefs = peerPrefs(participant.identity);
-  const pct = Math.round(prefs.volume * 100);
+  if (item.type === 'label') {
+    const el = document.createElement('div');
+    el.className = 'ctx-label';
+    el.textContent = item.label;
+    return el;
+  }
 
-  const panel = document.createElement('div');
-  panel.className = 'peer-panel';
-  // A linha é posicionada por "order", então o painel precisa do mesmo
-  // valor para ficar logo abaixo da pessoa certa
-  panel.style.order = rowEl.style.order;
-  panel.innerHTML = `
-    <div class="peer-row">
-      <input class="range" type="range" min="0" max="150" value="${pct}" />
+  if (item.type === 'sep') {
+    const el = document.createElement('div');
+    el.className = 'ctx-sep';
+    return el;
+  }
+
+  if (item.type === 'slider') {
+    const el = document.createElement('div');
+    el.className = 'ctx-slider';
+    const pct = Math.round(item.value * 100);
+    el.innerHTML = `
+      <input class="range" type="range" min="0" max="${item.max || 150}" value="${pct}" />
       <span class="range-value">${pct}%</span>
-    </div>
-    <label class="switch gate-switch">
-      <input type="checkbox" ${prefs.gate ? 'checked' : ''} />
-      <span class="track"><span class="knob"></span></span>
-      <span class="switch-label">Supressão de ruído</span>
-    </label>
+    `;
+    const range = el.querySelector('.range');
+    const label = el.querySelector('.range-value');
+    range.addEventListener('input', () => {
+      label.textContent = `${range.value}%`;
+      item.onInput(Number(range.value) / 100);
+    });
+    range.addEventListener('change', () => item.onCommit?.());
+    return el;
+  }
+
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.className = 'ctx-item' + (item.on ? ' on' : '') + (item.danger ? ' danger' : '');
+  el.innerHTML = `
+    ${item.icon ? icon(item.icon) : ''}
+    <span>${escapeHtml(item.label)}</span>
+    ${item.hint ? `<span class="hint">${escapeHtml(item.hint)}</span>` : ''}
+    ${item.checkable ? `<span class="check">${icon('ic-check')}</span>` : ''}
   `;
-
-  const range = panel.querySelector('.range');
-  const value = panel.querySelector('.range-value');
-  const gate = panel.querySelector('.gate-switch input');
-
-  const markRow = () =>
-    rowEl.classList.toggle('turned-down', prefs.volume !== 1 || prefs.gate);
-
-  range.addEventListener('input', () => {
-    prefs.volume = Number(range.value) / 100;
-    value.textContent = `${range.value}%`;
-    applyPeerVolume(participant);
-    markRow();
+  el.addEventListener('click', () => {
+    if (item.keepOpen) item.onClick();
+    else { closeCtx(); item.onClick(); }
   });
-  range.addEventListener('change', saveSettings);
+  return el;
+}
 
-  gate.addEventListener('change', () => {
-    prefs.gate = gate.checked;
-    saveSettings();
-    applyPeerAudio(participant);
-    markRow();
-    toast(`Supressão de ruído ${prefs.gate ? 'ligada' : 'desligada'} para ${displayName(participant)}`);
-  });
+function openCtx(items, x, y) {
+  closeCtx();
 
-  rowEl.classList.add('vol-open');
-  rowEl.after(panel);
+  for (const item of items) {
+    if (item) ctxMenu.appendChild(buildCtxNode(item));
+  }
+  ctxMenu.classList.remove('hidden', 'from-right');
+
+  // Mantém o menu dentro da janela, virando o ponto de origem quando
+  // não couber para a direita ou para baixo
+  const rect = ctxMenu.getBoundingClientRect();
+  const pad = 8;
+  let left = x;
+  let top = y;
+
+  if (left + rect.width + pad > window.innerWidth) {
+    left = x - rect.width;
+    ctxMenu.classList.add('from-right');
+  }
+  if (top + rect.height + pad > window.innerHeight) {
+    top = y - rect.height;
+  }
+
+  ctxMenu.style.left = `${Math.max(pad, left)}px`;
+  ctxMenu.style.top = `${Math.max(pad, top)}px`;
+
+  const onDown = (e) => { if (!ctxMenu.contains(e.target)) closeCtx(); };
+  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeCtx(); } };
+
+  document.addEventListener('mousedown', onDown, true);
+  document.addEventListener('keydown', onKey, true);
+  window.addEventListener('blur', closeCtx);
+
+  ctxCleanup = () => {
+    document.removeEventListener('mousedown', onDown, true);
+    document.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('blur', closeCtx);
+  };
+}
+
+// Menu de uma pessoa: volume da voz, supressão de ruído e, se ela
+// estiver transmitindo, o volume da transmissão dela.
+function openPeerMenu(participant, x, y) {
+  const prefs = peerPrefs(participant.identity);
+  const name = displayName(participant);
+  const share = shares.get(participant.sid);
+
+  const items = [
+    { type: 'header', label: name },
+    { type: 'sep' },
+    { type: 'label', label: 'Volume da voz' },
+    {
+      type: 'slider',
+      value: prefs.volume,
+      onInput: (v) => { prefs.volume = v; applyPeerVolume(participant); syncParticipants(); },
+      onCommit: saveSettings,
+    },
+    { type: 'label', label: 'Supressão de ruído' },
+    ...NR_ORDER.map((key) => ({
+      label: NR_LEVELS[key].label,
+      checkable: true,
+      on: prefs.nr === key,
+      keepOpen: true,
+      onClick: () => {
+        prefs.nr = key;
+        saveSettings();
+        applyPeerAudio(participant);
+        syncParticipants();
+        // Reabre com a marca no lugar certo, sem fechar o menu
+        openPeerMenu(participant, x, y);
+      },
+    })),
+  ];
+
+  if (share?.hasAudio) {
+    items.push(
+      { type: 'sep' },
+      { type: 'label', label: 'Volume da transmissão' },
+      {
+        type: 'slider',
+        value: prefs.streamVolume,
+        onInput: (v) => { prefs.streamVolume = v; applyStreamVolume(participant); },
+        onCommit: saveSettings,
+      },
+      {
+        label: share === shares.get(activeShareKey) ? 'Já está em foco' : 'Ver esta transmissão',
+        icon: 'ic-display',
+        onClick: () => selectShare(participant.sid),
+      },
+    );
+  }
+
+  openCtx(items, x, y);
 }
 
 // ============================================================
@@ -650,15 +798,15 @@ function applyPeerAudio(participant) {
   const el = audioElFor(participant);
   if (!el) return;
 
-  if (prefs.gate) buildChain(participant, el);
-  else destroyChain(participant.identity);
+  const cfg = NR_LEVELS[prefs.nr];
+  // Trocar de nível refaz a cadeia: o filtro e os limiares mudam
+  destroyChain(participant.identity);
+  if (cfg && prefs.nr !== 'off') buildChain(participant, el, cfg);
 
   applyPeerVolume(participant);
 }
 
-function buildChain(participant, el) {
-  if (chains.get(participant.identity)) return;
-
+function buildChain(participant, el, cfg) {
   const stream = el.srcObject;
   const track = stream?.getAudioTracks?.()[0];
   if (!track) return;
@@ -669,10 +817,11 @@ function buildChain(participant, el) {
 
     const highpass = ctx.createBiquadFilter();
     highpass.type = 'highpass';
-    highpass.frequency.value = 90;   // abaixo disso é quase só zumbido
+    highpass.frequency.value = cfg.hp;   // abaixo disso é quase só zumbido
 
     const analyser = ctx.createAnalyser();
-    analyser.fftSize = 512;
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0;
 
     const gate = ctx.createGain();
     const vol = ctx.createGain();
@@ -688,10 +837,11 @@ function buildChain(participant, el) {
     el.muted = true;
 
     chains.set(participant.identity, {
-      ctx, gate, vol, analyser,
-      el,
+      ctx, gate, vol, analyser, el, cfg,
       data: new Float32Array(analyser.fftSize),
+      floor: 0.01,     // piso de ruído estimado, ajustado a cada quadro
       open: true,
+      holdUntil: 0,
     });
   } catch (err) {
     console.error('Não foi possível montar a cadeia de áudio:', err);
@@ -706,27 +856,41 @@ function destroyChain(identity) {
   chain.ctx.close().catch(() => {});
 }
 
-// Um único laço cuida de todos os portões abertos
-const GATE_OPEN = 0.014;    // acima disso é voz
-const GATE_CLOSE = 0.008;   // abaixo disso é ruído de fundo
-
+// Um único laço cuida de todos os portões abertos.
+//
+// O limiar não é fixo: a cadeia estima o piso de ruído da pessoa e
+// decide em relação a ele. Um valor absoluto não funciona porque
+// depende do microfone, do ganho e da distância de quem fala.
 function runGates() {
-  for (const [, chain] of chains) {
-    const { analyser, data, gate, ctx } = chain;
-    analyser.getFloatTimeDomainData(data);
+  const now = performance.now();
+
+  for (const [, c] of chains) {
+    c.analyser.getFloatTimeDomainData(c.data);
 
     let sum = 0;
-    for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
-    const rms = Math.sqrt(sum / data.length);
+    for (let i = 0; i < c.data.length; i++) sum += c.data[i] * c.data[i];
+    const rms = Math.sqrt(sum / c.data.length);
 
-    // Histerese: limiares diferentes para abrir e fechar, senão o
-    // portão ficaria batendo em volumes próximos do limite.
-    if (chain.open && rms < GATE_CLOSE) chain.open = false;
-    else if (!chain.open && rms > GATE_OPEN) chain.open = true;
+    // O piso desce rápido e sobe devagar: assim ele aprende o silêncio
+    // da sala sem ser puxado para cima pela própria voz.
+    c.floor += (rms - c.floor) * (rms < c.floor ? 0.25 : 0.0006);
+    const floor = Math.max(c.floor, 0.0008);
 
-    // Fechar devagar e abrir rápido: cortar o começo de uma palavra
-    // incomoda muito mais do que deixar escapar um pouco de ruído.
-    gate.gain.setTargetAtTime(chain.open ? 1 : 0, ctx.currentTime, chain.open ? 0.01 : 0.12);
+    if (rms > floor * c.cfg.open) {
+      c.open = true;
+      c.holdUntil = now + c.cfg.hold;
+    } else if (c.open && rms < floor * c.cfg.close && now > c.holdUntil) {
+      c.open = false;
+    }
+
+    // Abre quase instantaneamente e fecha devagar. Cortar o começo de
+    // uma palavra incomoda muito mais do que deixar escapar ruído, e o
+    // "hold" impede que ele feche no meio de uma frase.
+    c.gate.gain.setTargetAtTime(
+      c.open ? 1 : 0,
+      c.ctx.currentTime,
+      c.open ? 0.008 : c.cfg.release,
+    );
   }
 }
 
@@ -977,7 +1141,10 @@ micGain.addEventListener('change', () => {
 
 function applyOutputVolume() {
   if (!room) return;
-  for (const p of room.remoteParticipants.values()) applyPeerVolume(p);
+  for (const p of room.remoteParticipants.values()) {
+    applyPeerVolume(p);
+    applyStreamVolume(p);
+  }
 }
 
 outputVolume.addEventListener('input', () => {
@@ -1306,7 +1473,7 @@ function renderStage() {
     shareView.querySelectorAll('video').forEach((v) => v.remove());
     shareView.classList.add('hidden');
     tiles.classList.remove('dimmed');
-    streamVolWrap.classList.remove('open');
+    closeCtx();
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     renderShareBar();
     return;
@@ -1328,9 +1495,12 @@ function renderStage() {
   shareView.classList.remove('hidden');
   tiles.classList.add('dimmed');
 
-  // O controle de volume só faz sentido se a transmissão tiver som
-  streamVolWrap.classList.toggle('hidden', !share.hasAudio || share.participant === room?.localParticipant);
-  if (!share.hasAudio) streamVolWrap.classList.remove('open');
+  // O botão de áudio só aparece quando há som de outra pessoa para
+  // controlar — mas o menu do botão direito continua valendo sempre
+  streamVolBtn.classList.toggle(
+    'hidden',
+    !share.hasAudio || share.participant === room?.localParticipant,
+  );
 
   renderShareBar();
 }
@@ -1356,6 +1526,12 @@ function renderShareBar() {
       ${share.hasAudio ? `<span class="audio-ic">${icon('ic-speaker')}</span>` : ''}
     `;
     chip.addEventListener('click', () => selectShare(key));
+    chip.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (share.participant && share.participant !== room?.localParticipant) {
+        openPeerMenu(share.participant, e.clientX, e.clientY);
+      }
+    });
     shareBar.appendChild(chip);
   }
   shareBar.classList.remove('hidden');
@@ -1373,29 +1549,95 @@ document.addEventListener('fullscreenchange', () => {
   fullscreenBtn.title = on ? 'Sair da tela cheia (Esc)' : 'Tela cheia (F)';
 });
 
-// Volume da transmissão em foco
-streamVolBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  streamVolWrap.classList.toggle('open');
-});
-document.addEventListener('click', (e) => {
-  if (!streamVolWrap.contains(e.target)) streamVolWrap.classList.remove('open');
-});
+// O volume da transmissão é por pessoa, não global: baixar o jogo de
+// um amigo não pode baixar o de outro.
+function applyStreamVolume(participant) {
+  const target = participant
+    || (activeShareKey ? shares.get(activeShareKey)?.participant : null);
 
-streamVol.addEventListener('input', () => {
-  settings.streamVolume = Number(streamVol.value) / 100;
-  streamVolValue.textContent = `${streamVol.value}%`;
-  applyStreamVolume();
-});
-streamVol.addEventListener('change', saveSettings);
+  if (!target || target === room?.localParticipant) return;
 
-function applyStreamVolume() {
-  const share = activeShareKey ? shares.get(activeShareKey) : null;
-  if (!share?.participant || share.participant === room?.localParticipant) return;
+  const prefs = peerPrefs(target.identity);
   try {
-    share.participant.setVolume(settings.streamVolume, Track.Source.ScreenShareAudio);
+    target.setVolume(prefs.streamVolume * settings.outVolume, Track.Source.ScreenShareAudio);
   } catch { /* SDK sem esse método */ }
 }
+
+// Menu do palco: volume da transmissão em foco, troca entre
+// transmissões e tela cheia
+function openStageMenu(x, y) {
+  const share = activeShareKey ? shares.get(activeShareKey) : null;
+  if (!share) return;
+
+  const isLocal = share.participant === room?.localParticipant;
+  const items = [{ type: 'header', label: share.name }];
+
+  if (!isLocal && share.hasAudio) {
+    const prefs = peerPrefs(share.participant.identity);
+    items.push(
+      { type: 'sep' },
+      { type: 'label', label: 'Volume da transmissão' },
+      {
+        type: 'slider',
+        value: prefs.streamVolume,
+        onInput: (v) => { prefs.streamVolume = v; applyStreamVolume(share.participant); },
+        onCommit: saveSettings,
+      },
+    );
+  } else if (!isLocal) {
+    items.push(
+      { type: 'sep' },
+      { label: 'Esta transmissão não tem áudio', hint: '—', onClick: () => {} },
+    );
+  }
+
+  // Outras transmissões acontecendo agora
+  const others = [...shares.entries()].filter(([key]) => key !== activeShareKey);
+  if (others.length) {
+    items.push({ type: 'sep' }, { type: 'label', label: 'Trocar para' });
+    for (const [key, other] of others) {
+      items.push({
+        label: other.name,
+        icon: 'ic-display',
+        onClick: () => selectShare(key),
+      });
+    }
+  }
+
+  items.push(
+    { type: 'sep' },
+    {
+      label: document.fullscreenElement ? 'Sair da tela cheia' : 'Tela cheia',
+      icon: document.fullscreenElement ? 'ic-collapse' : 'ic-expand',
+      hint: 'F',
+      onClick: toggleFullscreen,
+    },
+  );
+
+  if (isLocal) {
+    items.push({
+      label: 'Parar de compartilhar',
+      icon: 'ic-screen-off',
+      danger: true,
+      onClick: stopScreenShare,
+    });
+  }
+
+  openCtx(items, x, y);
+}
+
+streamVolBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const r = streamVolBtn.getBoundingClientRect();
+  openStageMenu(r.right, r.bottom + 6);
+});
+
+stage.addEventListener('contextmenu', (e) => {
+  // Sem transmissão o palco mostra os ladrilhos, que têm menu próprio
+  if (!activeShareKey || e.target.closest('.tile')) return;
+  e.preventDefault();
+  openStageMenu(e.clientX, e.clientY);
+});
 
 // ---------- Faixas recebidas ----------
 
@@ -1427,7 +1669,7 @@ function handleTrackSubscribed(track, publication, participant) {
       share.hasAudio = true;
       renderStage();
     }
-    applyStreamVolume();
+    applyStreamVolume(participant);
   } else {
     // Microfone: aplica volume e supressão individuais desta pessoa
     applyPeerAudio(participant);
