@@ -10,9 +10,8 @@
 
 <!-- ============================================================
      Biblioteca de ícones.
-     Desenhados como traço (stroke) de 1.7px num grid de 24px, no
-     mesmo espírito dos SF Symbols: peso uniforme, pontas
-     arredondadas, nada de emoji.
+     Traço de 1.7px num grid de 24px, no mesmo espírito dos SF
+     Symbols: peso uniforme, pontas arredondadas, nada de emoji.
      ============================================================ -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
@@ -63,34 +62,61 @@
       <path d="M12 3.6 21.6 20.4H2.4L12 3.6Z" />
       <path d="M12 10v4.2M12 17.4h.01" stroke-width="1.9" />
     </symbol>
-    <symbol id="ic-signal" viewBox="0 0 24 24">
-      <path d="M4.5 15.5v3M9.5 11.5v7M14.5 7.5v11M19.5 4.5v14" stroke-width="1.9" />
-    </symbol>
     <symbol id="ic-people" viewBox="0 0 24 24">
       <circle cx="9.5" cy="8" r="3.25" />
       <path d="M3.5 19.5a6 6 0 0 1 12 0M16.5 5.1a3.25 3.25 0 0 1 0 5.8M17.5 14.4a6 6 0 0 1 3 5.1" />
+    </symbol>
+    <symbol id="ic-chat" viewBox="0 0 24 24">
+      <path d="M20.5 12.2c0 4-3.8 7.2-8.5 7.2a9.9 9.9 0 0 1-2.6-.34L4.2 20.5l1.2-3.6A6.9 6.9 0 0 1 3.5 12.2C3.5 8.2 7.3 5 12 5s8.5 3.2 8.5 7.2Z" />
+    </symbol>
+    <symbol id="ic-expand" viewBox="0 0 24 24">
+      <path d="M9 4.5H4.5V9M15 4.5h4.5V9M9 19.5H4.5V15M15 19.5h4.5V15" />
+    </symbol>
+    <symbol id="ic-collapse" viewBox="0 0 24 24">
+      <path d="M4.5 9H9V4.5M19.5 9H15V4.5M4.5 15H9v4.5M19.5 15H15v4.5" />
+    </symbol>
+    <symbol id="ic-gear" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="3.1" />
+      <path d="M19.4 14.2a1.6 1.6 0 0 0 .32 1.76l.06.06a1.94 1.94 0 1 1-2.74 2.74l-.06-.06a1.6 1.6 0 0 0-1.76-.32 1.6 1.6 0 0 0-.97 1.46v.17a1.94 1.94 0 0 1-3.88 0v-.09a1.6 1.6 0 0 0-1.05-1.46 1.6 1.6 0 0 0-1.76.32l-.06.06a1.94 1.94 0 1 1-2.74-2.74l.06-.06a1.6 1.6 0 0 0 .32-1.76 1.6 1.6 0 0 0-1.46-.97H3.4a1.94 1.94 0 0 1 0-3.88h.09a1.6 1.6 0 0 0 1.46-1.05 1.6 1.6 0 0 0-.32-1.76l-.06-.06a1.94 1.94 0 1 1 2.74-2.74l.06.06a1.6 1.6 0 0 0 1.76.32h.08a1.6 1.6 0 0 0 .97-1.46V3.4a1.94 1.94 0 0 1 3.88 0v.09a1.6 1.6 0 0 0 .97 1.46 1.6 1.6 0 0 0 1.76-.32l.06-.06a1.94 1.94 0 1 1 2.74 2.74l-.06.06a1.6 1.6 0 0 0-.32 1.76v.08a1.6 1.6 0 0 0 1.46.97h.17a1.94 1.94 0 0 1 0 3.88h-.09a1.6 1.6 0 0 0-1.46.97Z" />
+    </symbol>
+    <symbol id="ic-speaker" viewBox="0 0 24 24">
+      <path d="M11.5 4.5 6.75 8.5H3.5v7h3.25l4.75 4z" />
+      <path d="M15.5 9.2a3.9 3.9 0 0 1 0 5.6M18.2 6.4a7.8 7.8 0 0 1 0 11.2" />
+    </symbol>
+    <symbol id="ic-user" viewBox="0 0 24 24">
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
     </symbol>
   </defs>
 </svg>
 
 <div id="app">
 
-  <!-- Barra de título: área arrastável, já que a moldura nativa
-       do Windows foi escondida no main.js -->
+  <!-- Barra de título arrastável: a moldura nativa do Windows foi
+       escondida no main.js -->
   <div class="titlebar">
     <svg class="ic ic-sm" style="color:var(--blue)"><use href="#ic-wave" /></svg>
     <span class="titlebar-title">VoiceChatApp</span>
+    <span class="titlebar-room hidden" id="titlebar-room"></span>
   </div>
 
   <!-- ========================= Entrar ========================= -->
   <section id="join-screen" class="screen">
+    <!-- Manchas de cor que derivam devagar ao fundo. Animadas só em
+         transform/opacity, que o compositor resolve sem repintar. -->
+    <div class="aurora" aria-hidden="true">
+      <span class="blob b1"></span>
+      <span class="blob b2"></span>
+      <span class="blob b3"></span>
+    </div>
+
     <div class="join-card">
-      <div class="app-glyph">
+      <div class="app-glyph" id="app-glyph">
         <svg class="ic ic-lg"><use href="#ic-wave" /></svg>
       </div>
 
       <h1>VoiceChatApp</h1>
-      <p class="subtitle">Voz, texto e compartilhamento de tela para o seu grupo</p>
+      <p class="subtitle">Voz, texto e tela compartilhada para o seu grupo</p>
 
       <form id="join-form" novalidate>
         <div class="field">
@@ -99,27 +125,38 @@
                  autocomplete="off" maxlength="32" autofocus />
         </div>
 
-        <div class="field">
-          <label for="room-name">Sala</label>
-          <input id="room-name" class="input" type="text" placeholder="geral"
-                 autocomplete="off" maxlength="48" value="geral" />
-          <p class="field-hint">Todo mundo precisa digitar o mesmo nome de sala.</p>
+        <div class="field-row">
+          <div class="field">
+            <label for="room-name">Sala</label>
+            <input id="room-name" class="input" type="text" placeholder="geral"
+                   autocomplete="off" maxlength="48" value="geral" />
+          </div>
+          <div class="field">
+            <label for="room-password">Senha</label>
+            <input id="room-password" class="input" type="password" autocomplete="off"
+                   placeholder="Opcional" />
+          </div>
         </div>
 
-        <div class="field">
-          <label for="server-url">Servidor de tokens</label>
-          <input id="server-url" class="input" type="text" autocomplete="off"
-                 value="http://localhost:3001" />
-        </div>
+        <!-- Avançado fica recolhido: quem entra todo dia não precisa
+             ver o endereço do servidor toda vez -->
+        <details class="advanced" id="advanced">
+          <summary>
+            <svg class="ic ic-sm chev"><use href="#ic-chevron" /></svg>
+            Servidor de tokens
+            <span class="server-peek" id="server-peek"></span>
+          </summary>
+          <div class="advanced-body">
+            <input id="server-url" class="input" type="text" autocomplete="off"
+                   value="http://localhost:3001" />
+            <p class="field-hint">Endereço que entrega o acesso às salas.</p>
+          </div>
+        </details>
 
-        <div class="field">
-          <label for="room-password">Senha</label>
-          <input id="room-password" class="input" type="password" autocomplete="off"
-                 placeholder="Senha combinada do grupo" />
-          <p class="field-hint">Deixe em branco se o servidor não pedir senha.</p>
-        </div>
-
-        <button id="join-btn" class="btn btn-primary btn-block" type="submit">Entrar na sala</button>
+        <button id="join-btn" class="btn btn-primary btn-block" type="submit">
+          <span class="spinner" aria-hidden="true"></span>
+          <span class="btn-label">Entrar na sala</span>
+        </button>
       </form>
 
       <p id="join-error" class="error hidden"></p>
@@ -132,19 +169,20 @@
       <div class="sidebar-head">
         <span class="hash">#</span>
         <span id="current-room-name">geral</span>
+        <span class="pill" id="participant-count">1</span>
       </div>
 
       <div class="section-title">
-        Na sala &middot; <span id="participant-count">1</span>
+        <svg class="ic ic-sm"><use href="#ic-people" /></svg>
+        Participantes
       </div>
 
       <div class="participants" id="participants-list"></div>
 
-      <!-- Painel de conexão: é aqui que dá pra ver latência e
-           qualidade real da transmissão -->
+      <!-- Painel de conexão: latência e qualidade reais da transmissão -->
       <div class="net" id="net-panel">
         <div class="net-head" id="net-toggle" role="button" tabindex="0">
-          <span class="net-dot" id="net-dot"></span>
+          <span class="bars" id="net-bars"><i></i><i></i><i></i><i></i></span>
           <span id="net-label">Conectando…</span>
           <svg class="ic ic-sm chev"><use href="#ic-chevron" /></svg>
         </div>
@@ -161,10 +199,14 @@
 
       <div class="dock">
         <button id="mic-btn" class="dock-btn on" title="Microfone (M)" aria-label="Microfone">
+          <span class="level-ring" aria-hidden="true"></span>
           <svg class="ic"><use href="#ic-mic" /></svg>
         </button>
         <button id="screenshare-btn" class="dock-btn" title="Compartilhar tela" aria-label="Compartilhar tela">
           <svg class="ic"><use href="#ic-screen" /></svg>
+        </button>
+        <button id="settings-btn" class="dock-btn" title="Configurações (,)" aria-label="Configurações">
+          <svg class="ic"><use href="#ic-gear" /></svg>
         </button>
         <button id="leave-btn" class="dock-btn danger" title="Sair da sala" aria-label="Sair da sala">
           <svg class="ic"><use href="#ic-hangup" /></svg>
@@ -173,19 +215,56 @@
     </aside>
 
     <main class="content">
-      <div class="stage" id="video-area"></div>
+      <div class="stage" id="stage">
+        <!-- Modo grade: quem está na chamada -->
+        <div class="tiles" id="tiles"></div>
 
-      <section class="chat">
-        <div class="chat-messages" id="chat-messages"></div>
-        <form id="chat-form" class="composer">
-          <input id="chat-text" class="input" type="text" placeholder="Escreva uma mensagem"
-                 autocomplete="off" maxlength="800" />
-          <button type="submit" class="send-btn" id="send-btn" disabled aria-label="Enviar">
-            <svg class="ic ic-sm"><use href="#ic-send" /></svg>
-          </button>
-        </form>
+        <!-- Modo tela: vídeo compartilhado -->
+        <div class="share-view hidden" id="share-view">
+          <div class="stage-badge" id="stage-badge">
+            <span class="live"></span>
+            <span id="stage-badge-text"></span>
+          </div>
+          <div class="stage-tools">
+            <button class="icon-btn glass" id="fullscreen-btn" title="Tela cheia (F)" aria-label="Tela cheia">
+              <svg class="ic ic-sm"><use href="#ic-expand" /></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <section class="chat" id="chat">
+        <div class="chat-head" id="chat-toggle" role="button" tabindex="0">
+          <svg class="ic ic-sm"><use href="#ic-chat" /></svg>
+          <span>Chat</span>
+          <span class="unread hidden" id="chat-unread">0</span>
+          <svg class="ic ic-sm chev"><use href="#ic-chevron" /></svg>
+        </div>
+
+        <div class="chat-inner">
+          <div class="chat-messages" id="chat-messages"></div>
+
+          <div class="typing hidden" id="typing">
+            <span class="dots"><i></i><i></i><i></i></span>
+            <span id="typing-text"></span>
+          </div>
+
+          <form id="chat-form" class="composer">
+            <input id="chat-text" class="input" type="text" placeholder="Escreva uma mensagem"
+                   autocomplete="off" maxlength="800" />
+            <button type="submit" class="send-btn" id="send-btn" disabled aria-label="Enviar">
+              <svg class="ic ic-sm"><use href="#ic-send" /></svg>
+            </button>
+          </form>
+        </div>
       </section>
     </main>
+
+    <!-- Faixa de reconexão, entra deslizando do topo -->
+    <div class="reconnect hidden" id="reconnect-banner">
+      <span class="spinner sm" aria-hidden="true"></span>
+      Reconectando…
+    </div>
   </section>
 </div>
 
@@ -204,6 +283,7 @@
     </header>
 
     <div class="segmented" role="tablist">
+      <span class="seg-thumb" id="seg-thumb" aria-hidden="true"></span>
       <button class="seg active" data-tab="screen" role="tab">
         <svg class="ic ic-sm"><use href="#ic-display" /></svg>
         Telas <span class="count" id="count-screen"></span>
@@ -242,6 +322,113 @@
       <span class="spacer" id="picker-selection">Nada selecionado</span>
       <button id="cancel-picker" class="btn btn-secondary" type="button">Cancelar</button>
       <button id="confirm-picker" class="btn btn-primary" type="button" disabled>Compartilhar</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ========================= Configurações ========================= -->
+<div id="settings-dialog" class="backdrop hidden" role="dialog" aria-modal="true"
+     aria-labelledby="settings-title">
+  <div class="sheet sheet-md">
+    <header class="sheet-head">
+      <div>
+        <h2 id="settings-title">Configurações</h2>
+        <p>Vale só para este computador</p>
+      </div>
+      <button class="icon-btn" id="close-settings" aria-label="Fechar">
+        <svg class="ic ic-sm"><use href="#ic-close" /></svg>
+      </button>
+    </header>
+
+    <div class="sheet-body">
+      <!-- Identidade -->
+      <section class="group">
+        <h4><svg class="ic ic-sm"><use href="#ic-user" /></svg> Perfil</h4>
+        <div class="row">
+          <label for="display-name">Nome de exibição</label>
+          <div class="row-control inline">
+            <input id="display-name" class="input" type="text" maxlength="32" autocomplete="off" />
+            <button id="save-name" class="btn btn-secondary" type="button">Salvar</button>
+          </div>
+        </div>
+        <p class="row-hint">Muda para todo mundo na hora, sem sair da sala.</p>
+      </section>
+
+      <!-- Entrada de áudio -->
+      <section class="group">
+        <h4><svg class="ic ic-sm"><use href="#ic-mic" /></svg> Microfone</h4>
+
+        <div class="row">
+          <label for="mic-select">Dispositivo</label>
+          <div class="row-control">
+            <select id="mic-select" class="select"></select>
+          </div>
+        </div>
+
+        <div class="row">
+          <label>Nível de entrada</label>
+          <div class="row-control">
+            <div class="meter" aria-hidden="true">
+              <span class="meter-fill" id="mic-meter"></span>
+              <span class="meter-ticks"></span>
+            </div>
+            <p class="row-hint" id="mic-meter-hint">Fale para ver as barras se moverem.</p>
+          </div>
+        </div>
+
+        <div class="row">
+          <label for="mic-gain">Ganho</label>
+          <div class="row-control inline">
+            <input id="mic-gain" class="range" type="range" min="0" max="200" value="100" />
+            <span class="range-value" id="mic-gain-value">100%</span>
+          </div>
+        </div>
+        <p class="row-hint">Acima de 100% amplifica um microfone fraco, e junto com ele o ruído de fundo.</p>
+
+        <div class="row toggles">
+          <label class="switch">
+            <input type="checkbox" id="opt-noise" checked />
+            <span class="track"><span class="knob"></span></span>
+            <span class="switch-label">Supressão de ruído</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="opt-echo" checked />
+            <span class="track"><span class="knob"></span></span>
+            <span class="switch-label">Cancelamento de eco</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="opt-agc" checked />
+            <span class="track"><span class="knob"></span></span>
+            <span class="switch-label">Volume automático</span>
+          </label>
+        </div>
+      </section>
+
+      <!-- Saída de áudio -->
+      <section class="group">
+        <h4><svg class="ic ic-sm"><use href="#ic-speaker" /></svg> Saída</h4>
+
+        <div class="row">
+          <label for="speaker-select">Dispositivo</label>
+          <div class="row-control">
+            <select id="speaker-select" class="select"></select>
+          </div>
+        </div>
+
+        <div class="row">
+          <label for="output-volume">Volume geral</label>
+          <div class="row-control inline">
+            <input id="output-volume" class="range" type="range" min="0" max="150" value="100" />
+            <span class="range-value" id="output-volume-value">100%</span>
+          </div>
+        </div>
+        <p class="row-hint">Afeta o que você ouve dos outros, não o que eles ouvem de você.</p>
+      </section>
+    </div>
+
+    <footer class="sheet-foot">
+      <span class="spacer" id="settings-status"></span>
+      <button id="close-settings-2" class="btn btn-primary" type="button">Concluído</button>
     </footer>
   </div>
 </div>

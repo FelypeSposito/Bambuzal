@@ -136,6 +136,9 @@ app.post('/token', async (req, res) => {
     canPublish: true,
     canSubscribe: true,
     canPublishData: true,
+    // Permite trocar o nome de exibição sem sair e reentrar na sala.
+    // A identidade continua fixa no token — só o rótulo muda.
+    canUpdateOwnMetadata: true,
   });
 
   const token = await at.toJwt();
