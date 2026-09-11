@@ -42,8 +42,10 @@ const settingsBtn = $('settings-btn');
 const leaveBtn = $('leave-btn');
 
 const chat = $('chat');
-const chatToggle = $('chat-toggle');
+const chatCollapse = $('chat-collapse');
+const chatReopen = $('chat-reopen');
 const chatUnread = $('chat-unread');
+const chatReopenUnread = $('chat-reopen-unread');
 const chatMessages = $('chat-messages');
 const chatForm = $('chat-form');
 const chatText = $('chat-text');
@@ -350,6 +352,7 @@ document.addEventListener('keydown', (e) => {
   if (typing || openModals.length || !room) return;
 
   if (e.key === 'm' || e.key === 'M') { e.preventDefault(); toggleMic(); }
+  if (e.key === 'c' || e.key === 'C') { e.preventDefault(); toggleChat(); }
   if (e.key === ',') { e.preventDefault(); openSettings(); }
   if ((e.key === 'f' || e.key === 'F') && activeShareKey) { e.preventDefault(); toggleFullscreen(); }
 });
@@ -1902,22 +1905,23 @@ function handleTrackUnsubscribed(track, publication, participant) {
 
 function setChatCollapsed(collapsed) {
   chat.classList.toggle('collapsed', collapsed);
+  chatReopen.classList.toggle('hidden', !collapsed);
   settings.chatCollapsed = collapsed;
   saveSettings();
+
   if (!collapsed) {
     unreadCount = 0;
     chatUnread.classList.add('hidden');
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    chatReopenUnread.classList.add('hidden');
+    // A rolagem só é confiável depois da animação de largura
+    setTimeout(() => { chatMessages.scrollTop = chatMessages.scrollHeight; }, 400);
   }
 }
 
-chatToggle.addEventListener('click', () => setChatCollapsed(!chat.classList.contains('collapsed')));
-chatToggle.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' || e.key === ' ') {
-    e.preventDefault();
-    setChatCollapsed(!chat.classList.contains('collapsed'));
-  }
-});
+const toggleChat = () => setChatCollapsed(!chat.classList.contains('collapsed'));
+
+chatCollapse.addEventListener('click', toggleChat);
+chatReopen.addEventListener('click', toggleChat);
 setChatCollapsed(settings.chatCollapsed);
 
 function renderChatEmptyState() {
@@ -2031,8 +2035,11 @@ function addChatMessage(author, text, isMine, participant) {
 
   if (!isMine && chat.classList.contains('collapsed')) {
     unreadCount += 1;
-    chatUnread.textContent = String(unreadCount);
+    const label = unreadCount > 99 ? '99+' : String(unreadCount);
+    chatUnread.textContent = label;
+    chatReopenUnread.textContent = label;
     chatUnread.classList.remove('hidden');
+    chatReopenUnread.classList.remove('hidden');
   }
 }
 

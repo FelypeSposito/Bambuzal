@@ -2,11 +2,31 @@
 // Responsável por abrir a janela do app e liberar permissões de
 // microfone e captura de tela (necessárias para voz e screen share).
 
-const { app, BrowserWindow, Menu, ipcMain, desktopCapturer, session } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, desktopCapturer, session, screen } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 
 let mainWindow;
+
+// A barra de título é desenhada pelo próprio app (titleBarStyle
+// 'hidden'), e é ela que serve de área de arraste. Se a janela abrir
+// com o topo acima da área visível, essa faixa fica inalcançável e não
+// há como mover a janela com o mouse. Aqui garantimos que ela sempre
+// caiba na tela em que está.
+function ensureOnScreen(win) {
+  const bounds = win.getBounds();
+  const area = screen.getDisplayMatching(bounds).workArea;
+
+  const width = Math.min(bounds.width, area.width);
+  const height = Math.min(bounds.height, area.height);
+
+  const x = Math.min(Math.max(bounds.x, area.x), area.x + area.width - width);
+  const y = Math.min(Math.max(bounds.y, area.y), area.y + area.height - height);
+
+  if (x !== bounds.x || y !== bounds.y || width !== bounds.width || height !== bounds.height) {
+    win.setBounds({ x, y, width, height });
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -37,9 +57,15 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   mainWindow.once('ready-to-show', () => {
+    ensureOnScreen(mainWindow);
     mainWindow.show();
     setupUpdates(mainWindow);
   });
+
+  // Uma tela desconectada ou trocada pode deixar a janela em
+  // coordenadas que não existem mais
+  screen.on('display-metrics-changed', () => ensureOnScreen(mainWindow));
+  screen.on('display-removed', () => ensureOnScreen(mainWindow));
 
   // Por segurança, mesmo sendo um app confiável: nunca deixa esta janela
   // navegar para um site externo nem abrir novas janelas para fora do app.

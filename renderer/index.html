@@ -223,6 +223,43 @@
       </div>
     </aside>
 
+    <!-- Chat: coluna própria ao lado dos participantes, retrátil.
+         Fora do palco, para a tela compartilhada usar a altura toda. -->
+    <section class="chat" id="chat">
+      <header class="chat-head">
+        <svg class="ic ic-sm"><use href="#ic-chat" /></svg>
+        <span class="chat-title">Chat</span>
+        <span class="unread hidden" id="chat-unread">0</span>
+        <button class="icon-btn" id="chat-collapse" title="Recolher o chat (C)"
+                aria-label="Recolher o chat">
+          <svg class="ic ic-sm chev"><use href="#ic-chevron" /></svg>
+        </button>
+      </header>
+
+      <div class="chat-inner">
+        <div class="chat-messages" id="chat-messages"></div>
+
+        <div class="typing hidden" id="typing">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span id="typing-text"></span>
+        </div>
+
+        <form id="chat-form" class="composer">
+          <input id="chat-text" class="input" type="text" placeholder="Escreva uma mensagem"
+                 autocomplete="off" maxlength="800" />
+          <button type="submit" class="send-btn" id="send-btn" disabled aria-label="Enviar">
+            <svg class="ic ic-sm"><use href="#ic-send" /></svg>
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Aba fina que devolve o chat quando ele está recolhido -->
+    <button class="chat-reopen hidden" id="chat-reopen" title="Abrir o chat (C)" aria-label="Abrir o chat">
+      <svg class="ic ic-sm"><use href="#ic-chat" /></svg>
+      <span class="unread hidden" id="chat-reopen-unread">0</span>
+    </button>
+
     <main class="content">
       <div class="stage" id="stage">
         <!-- Modo grade: quem está na chamada -->
@@ -249,32 +286,6 @@
         <!-- Aparece quando mais de uma pessoa transmite ao mesmo tempo -->
         <div class="share-bar hidden" id="share-bar"></div>
       </div>
-
-      <section class="chat" id="chat">
-        <div class="chat-head" id="chat-toggle" role="button" tabindex="0">
-          <svg class="ic ic-sm"><use href="#ic-chat" /></svg>
-          <span>Chat</span>
-          <span class="unread hidden" id="chat-unread">0</span>
-          <svg class="ic ic-sm chev"><use href="#ic-chevron" /></svg>
-        </div>
-
-        <div class="chat-inner">
-          <div class="chat-messages" id="chat-messages"></div>
-
-          <div class="typing hidden" id="typing">
-            <span class="dots"><i></i><i></i><i></i></span>
-            <span id="typing-text"></span>
-          </div>
-
-          <form id="chat-form" class="composer">
-            <input id="chat-text" class="input" type="text" placeholder="Escreva uma mensagem"
-                   autocomplete="off" maxlength="800" />
-            <button type="submit" class="send-btn" id="send-btn" disabled aria-label="Enviar">
-              <svg class="ic ic-sm"><use href="#ic-send" /></svg>
-            </button>
-          </form>
-        </div>
-      </section>
     </main>
 
     <!-- Faixa de reconexão, entra deslizando do topo -->

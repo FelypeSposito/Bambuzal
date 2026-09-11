@@ -998,33 +998,47 @@ input, button, textarea, select { font-family: inherit; }
 
 /* Chat ---------------------------------------------------------- */
 
+/* Coluna do chat, entre os participantes e o palco.
+   Recolher anima a largura; o conteúdo mantém a largura original e é
+   cortado pelo overflow, senão o texto refluiria durante a animação. */
+:root { --chat-w: 326px; }
+
 .chat {
-  height: 262px;
+  width: var(--chat-w);
   flex: none;
   display: flex;
   flex-direction: column;
   background: var(--bg);
-  border-top: 1px solid var(--hairline);
-  transition: height 380ms var(--ease);
+  border-right: 1px solid var(--hairline);
+  overflow: hidden;
+  transition: width 380ms var(--ease), opacity 260ms var(--ease);
 }
-.chat.collapsed { height: 42px; }
+.chat.collapsed {
+  width: 0;
+  opacity: 0;
+  border-right: none;
+  pointer-events: none;
+}
 
 .chat-head {
-  height: 42px;
+  height: 52px;
+  width: var(--chat-w);
   flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 14px;
-  font-size: 12.5px;
-  font-weight: 600;
+  padding: 0 10px 0 16px;
+  border-bottom: 1px solid var(--hairline);
   color: var(--label-2);
-  cursor: pointer;
-  transition: color 160ms var(--ease);
 }
-.chat-head:hover { color: var(--label); }
-.chat-head .chev { margin-left: auto; transition: transform 380ms var(--ease); }
-.chat:not(.collapsed) .chat-head .chev { transform: rotate(90deg); }
+.chat-title {
+  font-size: 13px;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+  color: var(--label);
+}
+.chat-head .icon-btn { margin-left: auto; }
+.chat-head .chev { transform: rotate(180deg); }
 
 .unread {
   min-width: 18px; height: 18px;
@@ -1039,14 +1053,42 @@ input, button, textarea, select { font-family: inherit; }
   animation: pop-in 300ms var(--ease-back) both;
 }
 
+/* Aba que devolve o chat quando ele está recolhido */
+.chat-reopen {
+  position: relative;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 26px;
+  padding: 14px 0;
+  margin-left: -1px;
+  border: 1px solid var(--hairline);
+  border-left: none;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--bg-raised);
+  color: var(--label-2);
+  cursor: pointer;
+  z-index: 4;
+  animation: slide-in-left 320ms var(--ease) both;
+  transition: background 180ms var(--ease), color 180ms var(--ease), width 180ms var(--ease);
+}
+.chat-reopen:hover { background: var(--bg-raised-2); color: var(--label); width: 30px; }
+.chat-reopen .unread {
+  position: absolute;
+  top: -7px; right: -9px;
+  min-width: 17px; height: 17px;
+  font-size: 10px;
+}
+
 .chat-inner {
   flex: 1;
   min-height: 0;
+  width: var(--chat-w);
   display: flex;
   flex-direction: column;
-  transition: opacity 220ms var(--ease);
 }
-.chat.collapsed .chat-inner { opacity: 0; pointer-events: none; }
 
 .chat-messages {
   flex: 1;
