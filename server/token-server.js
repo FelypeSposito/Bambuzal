@@ -94,8 +94,22 @@ setInterval(() => {
 
 // ---------- Rotas ----------
 
+// Lista do que esta versão do código sabe fazer. Serve para saber, de
+// fora, se um deploy já entrou no ar: o /health sozinho responde igual
+// antes e depois de qualquer mudança que não altere o formato dele.
+const FEATURES = [
+  'password',        // exige ROOM_PASSWORD quando definida
+  'rate-limit',      // limita tentativas por IP
+  'own-metadata',    // token permite trocar o nome sem reconectar
+];
+
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, authRequired: Boolean(ROOM_PASSWORD) });
+  res.json({
+    ok: true,
+    authRequired: Boolean(ROOM_PASSWORD),
+    features: FEATURES,
+    commit: (process.env.RENDER_GIT_COMMIT || 'local').slice(0, 7),
+  });
 });
 
 // POST /token  { room, username, password }

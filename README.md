@@ -1,17 +1,20 @@
-# VoiceChatApp
+# Bambuzal
 
 Um app de voz, chat de texto e compartilhamento de tela para Windows,
 no estilo do Discord, feito para um grupo pequeno (amigos, equipe etc).
 
-Este é um projeto inicial (MVP) que já funciona de ponta a ponta:
+Funciona de ponta a ponta:
 - Chat de voz em tempo real
-- Compartilhamento de tela (escolhendo janela ou monitor)
-- Chat de texto dentro da sala
-- Lista de participantes com indicador de quem está falando
+- Compartilhamento de tela até 1440p60, com escolha de janela ou monitor
+- Chat de texto com indicador de quem está digitando
+- Participantes com anel de voz acionado pelo volume real
+- Painel de conexão com latência, perda de pacotes e bitrate
+- Configurações: microfone, saída de áudio, ganho e nome de exibição
+- Sala protegida por senha compartilhada
 
 O que ele **não** tem ainda (dá pra evoluir depois): vídeo de câmera,
 várias salas ao mesmo tempo na mesma tela, histórico de mensagens
-salvo, contas de usuário com senha.
+salvo e contas individuais de usuário.
 
 ## Como funciona por baixo dos panos
 
@@ -117,9 +120,9 @@ rodado em um Windows** (não funciona a partir do Linux/macOS), porque
 o electron-builder empacota o app usando ferramentas do próprio
 Windows.
 
-> Antes disso, coloque um ícone `.png` (de preferência 256x256) em
-> `build/icon.png` — hoje a pasta está vazia, e o electron-builder usa
-> um ícone padrão se não encontrar nada.
+> O ícone já está em `build/icon.png` (512x512 com transparência). Para
+> trocar, substitua o arquivo mantendo pelo menos 256x256 — abaixo
+> disso o electron-builder recusa.
 
 ## Passo 6 — Deixar o app acessível fora da sua rede
 
@@ -149,7 +152,7 @@ preciso preencher formulário nenhum.
    Render, nunca no repositório — é para isso que serve o `sync: false`
    do blueprint.
 4. Terminado o deploy, confira acessando `https://SEU-SERVICO.onrender.com/health`.
-   A resposta deve ser `{"ok":true,"authRequired":true}`.
+   A resposta traz `authRequired` e a lista de recursos da versão em execução.
 
 Depois disso, cada pessoa do grupo preenche no app:
 
@@ -165,7 +168,7 @@ Depois disso, cada pessoa do grupo preenche no app:
 ## Estrutura de arquivos
 
 ```
-voicechat-app/
+bambuzal/
 ├── main.js              # processo principal do Electron (janela, captura de tela)
 ├── renderer/
 │   ├── index.html       # telas do app (login e sala)
@@ -182,7 +185,6 @@ voicechat-app/
 
 - Adicionar câmera (vídeo de webcam), além da tela
 - Suporte a várias salas/canais dentro do mesmo app
-- Tela de configurações (escolher microfone/saída de áudio)
+- Histórico de mensagens que sobrevive ao fechar o app
 - Notificações quando alguém entra na sala
-- Hospedar o servidor de tokens de forma permanente (Render/Railway)
-  em vez de depender de alguém deixar o PC ligado
+- Atualização automática do app instalado
