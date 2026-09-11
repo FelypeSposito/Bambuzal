@@ -225,12 +225,29 @@
             <span class="live"></span>
             <span id="stage-badge-text"></span>
           </div>
+
           <div class="stage-tools">
+            <div class="vol-pop" id="stream-vol-wrap">
+              <button class="icon-btn glass" id="stream-vol-btn" title="Volume desta transmissão"
+                      aria-label="Volume da transmissão">
+                <svg class="ic ic-sm"><use href="#ic-speaker" /></svg>
+              </button>
+              <div class="vol-panel" id="stream-vol-panel">
+                <span class="vol-title">Volume da transmissão</span>
+                <div class="vol-line">
+                  <input id="stream-vol" class="range" type="range" min="0" max="150" value="100" />
+                  <span class="range-value" id="stream-vol-value">100%</span>
+                </div>
+              </div>
+            </div>
             <button class="icon-btn glass" id="fullscreen-btn" title="Tela cheia (F)" aria-label="Tela cheia">
               <svg class="ic ic-sm"><use href="#ic-expand" /></svg>
             </button>
           </div>
         </div>
+
+        <!-- Aparece quando mais de uma pessoa transmite ao mesmo tempo -->
+        <div class="share-bar hidden" id="share-bar"></div>
       </div>
 
       <section class="chat" id="chat">
@@ -311,6 +328,17 @@
           <option value="maintain-resolution">Nitidez (texto, código)</option>
         </select>
       </label>
+    </div>
+
+    <div class="picker-audio">
+      <label class="switch">
+        <input type="checkbox" id="share-audio" checked />
+        <span class="track"><span class="knob"></span></span>
+        <span class="switch-label">Incluir áudio do sistema</span>
+      </label>
+      <p class="row-hint" id="share-audio-hint">
+        Captura tudo que sai pelas caixas, não só desta janela.
+      </p>
     </div>
 
     <div class="sheet-body">

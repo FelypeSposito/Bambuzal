@@ -30,8 +30,13 @@ const participantCount = $('participant-count');
 const stage = $('stage');
 const tiles = $('tiles');
 const shareView = $('share-view');
+const shareBar = $('share-bar');
 const stageBadgeText = $('stage-badge-text');
 const fullscreenBtn = $('fullscreen-btn');
+const streamVolWrap = $('stream-vol-wrap');
+const streamVolBtn = $('stream-vol-btn');
+const streamVol = $('stream-vol');
+const streamVolValue = $('stream-vol-value');
 
 const micBtn = $('mic-btn');
 const screenshareBtn = $('screenshare-btn');
@@ -60,6 +65,8 @@ const pickerSelection = $('picker-selection');
 const segmented = document.querySelector('.segmented');
 const qualitySelect = $('quality-select');
 const modeSelect = $('mode-select');
+const shareAudioToggle = $('share-audio');
+const shareAudioHint = $('share-audio-hint');
 
 const settingsDialog = $('settings-dialog');
 const closeSettings = $('close-settings');
@@ -105,11 +112,15 @@ let onConfirmAccept = null;
 
 let lastChatAuthor = null;
 let unreadCount = 0;
-const typingUntil = new Map();  // identidade -> timestamp
+const typingUntil = new Map();
 let lastTypingSent = 0;
 
-// Cadeia de Web Audio usada só quando o ganho sai de 100%
 let gainCtx = null;
+
+// Transmissões ativas, incluindo a própria. A chave é 'local' ou o sid
+// do participante remoto.
+const shares = new Map();
+let activeShareKey = null;
 
 const LAST_USED_KEY = 'voicechat.lastUsed';
 const SETTINGS_KEY = 'voicechat.settings';
@@ -120,6 +131,8 @@ const settings = {
   gain: 1, outVolume: 1,
   noise: true, echo: true, agc: true,
   chatCollapsed: false,
+  peers: {},          // identidade -> { volume, gate }
+  streamVolume: 1,
 };
 
 // ============================================================
@@ -148,7 +161,6 @@ function toast(message, isError = false) {
 function showError(message) {
   joinError.innerHTML = `${icon('ic-alert')}<span>${escapeHtml(message)}</span>`;
   joinError.classList.remove('hidden');
-  // Reinicia a animação de tremor mesmo em erros seguidos iguais
   joinError.style.animation = 'none';
   void joinError.offsetWidth;
   joinError.style.animation = '';
@@ -181,10 +193,14 @@ function saveSettings() {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 }
 
+// Preferências por pessoa, guardadas pela identidade (que é estável,
+// ao contrário do nome de exibição e do sid)
+function peerPrefs(identity) {
+  if (!settings.peers[identity]) settings.peers[identity] = { volume: 1, gate: false };
+  return settings.peers[identity];
+}
+
 // ---------- Camada de modais ----------
-// Um único lugar controlando abertura/fechamento garante que Esc,
-// clique no fundo e botão de fechar funcionem em todos os modais,
-// e que a animação de saída rode antes de esconder o elemento.
 
 const openModals = [];
 
@@ -242,11 +258,10 @@ confirmOk.addEventListener('click', () => {
   if (fn) fn();
 });
 
-// ---------- Teclado ----------
-
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (closeTopModal()) e.preventDefault();
+    else if (streamVolWrap.classList.contains('open')) streamVolWrap.classList.remove('open');
     else if (document.fullscreenElement) document.exitFullscreen();
     return;
   }
@@ -266,12 +281,8 @@ document.addEventListener('keydown', (e) => {
 
   if (e.key === 'm' || e.key === 'M') { e.preventDefault(); toggleMic(); }
   if (e.key === ',') { e.preventDefault(); openSettings(); }
-  if ((e.key === 'f' || e.key === 'F') && isShareVisible()) { e.preventDefault(); toggleFullscreen(); }
+  if ((e.key === 'f' || e.key === 'F') && activeShareKey) { e.preventDefault(); toggleFullscreen(); }
 });
-
-// ============================================================
-// Transição entre telas
-// ============================================================
 
 function switchScreen(from, to) {
   from.classList.add('leaving');
@@ -279,7 +290,6 @@ function switchScreen(from, to) {
     from.classList.add('hidden');
     from.classList.remove('leaving');
     to.classList.remove('hidden');
-    // Reinicia a animação de entrada
     to.style.animation = 'none';
     void to.offsetWidth;
     to.style.animation = '';
@@ -302,14 +312,12 @@ try {
 
 try {
   Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'));
+  if (!settings.peers) settings.peers = {};
 } catch { /* idem */ }
 
 function updateServerPeek() {
-  try {
-    serverPeek.textContent = new URL(serverUrlInput.value.trim()).host;
-  } catch {
-    serverPeek.textContent = '';
-  }
+  try { serverPeek.textContent = new URL(serverUrlInput.value.trim()).host; }
+  catch { serverPeek.textContent = ''; }
 }
 serverUrlInput.addEventListener('input', updateServerPeek);
 updateServerPeek();
@@ -383,13 +391,13 @@ async function connectToRoom(url, token, roomName) {
     .on(RoomEvent.ParticipantConnected, (p) => {
       syncParticipants();
       addSystemMessage(`${displayName(p)} entrou`);
-      applyOutputVolume();
     })
     .on(RoomEvent.ParticipantDisconnected, (p) => {
+      removeShare(p.sid);
       syncParticipants();
       addSystemMessage(`${displayName(p)} saiu`);
     })
-    .on(RoomEvent.ParticipantNameChanged, syncParticipants)
+    .on(RoomEvent.ParticipantNameChanged, () => { syncParticipants(); renderShareBar(); })
     .on(RoomEvent.TrackSubscribed, handleTrackSubscribed)
     .on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed)
     .on(RoomEvent.TrackMuted, syncParticipants)
@@ -408,8 +416,7 @@ async function connectToRoom(url, token, roomName) {
   await applyMicSettings({ silent: true });
 
   displayNameInput.value = displayName(room.localParticipant);
-  applyOutputVolume();
-  showTiles();
+  renderStage();
   syncParticipants();
   renderChatEmptyState();
   startStatsLoop();
@@ -441,6 +448,10 @@ function reconcile(container, items, create, update) {
   });
 
   for (const el of [...container.children]) {
+    // Painéis auxiliares (como o de áudio por pessoa) não têm chave e
+    // não são participantes — a reconciliação não pode removê-los
+    if (!el.dataset.key) continue;
+
     if (!alive.has(el.dataset.key) && !el.classList.contains('leaving')) {
       el.classList.add('leaving');
       setTimeout(() => el.remove(), 280);
@@ -452,24 +463,38 @@ function micOnFor(p) {
   try { return p.isMicrophoneEnabled; } catch { return true; }
 }
 
-function makeRow() {
+function makeRow(p) {
   const el = document.createElement('div');
   el.className = 'participant';
   el.innerHTML = `
     <span class="av"><span class="av-ring"></span><span class="ini"></span></span>
     <span class="name"></span>
     <span class="mute-slot"></span>
+    <button class="vol-btn" type="button" title="Áudio desta pessoa" aria-label="Áudio desta pessoa">
+      ${icon('ic-speaker')}
+    </button>
   `;
+
+  // O painel de áudio individual fica logo abaixo da linha
+  const isLocal = room && p === room.localParticipant;
+  if (!isLocal) {
+    el.querySelector('.vol-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      togglePeerPanel(el, p);
+    });
+  } else {
+    el.querySelector('.vol-btn').remove();
+  }
+
   return el;
 }
 
 function updateRow(el, p) {
   const name = displayName(p);
-  const isLocal = p === room.localParticipant;
+  const isLocal = room && p === room.localParticipant;
 
   el.classList.toggle('speaking', Boolean(p.isSpeaking));
-  const av = el.querySelector('.av');
-  av.style.background = colorFor(name);
+  el.querySelector('.av').style.background = colorFor(name);
   el.querySelector('.ini').textContent = initialsOf(name);
   el.querySelector('.name').textContent = name + (isLocal ? ' (você)' : '');
 
@@ -477,6 +502,11 @@ function updateRow(el, p) {
   const muted = !micOnFor(p);
   if (muted && !slot.firstChild) slot.innerHTML = `<span class="muted-ic">${icon('ic-mic-off')}</span>`;
   if (!muted && slot.firstChild) slot.innerHTML = '';
+
+  if (!isLocal) {
+    const prefs = peerPrefs(p.identity);
+    el.classList.toggle('turned-down', prefs.volume !== 1 || prefs.gate);
+  }
 }
 
 function makeTile() {
@@ -491,11 +521,10 @@ function makeTile() {
 
 function updateTile(el, p) {
   const name = displayName(p);
-  const isLocal = p === room.localParticipant;
+  const isLocal = room && p === room.localParticipant;
 
   el.classList.toggle('speaking', Boolean(p.isSpeaking));
-  const av = el.querySelector('.tile-av');
-  av.style.background = colorFor(name);
+  el.querySelector('.tile-av').style.background = colorFor(name);
   el.querySelector('.ini').textContent = initialsOf(name);
   el.querySelector('.nm').textContent = name + (isLocal ? ' (você)' : '');
 
@@ -523,6 +552,184 @@ function syncParticipants() {
   reconcile(tiles, all, makeTile, updateTile);
 }
 
+// ---------- Painel de áudio por pessoa ----------
+
+function closePeerPanels() {
+  participantsList.querySelectorAll('.peer-panel').forEach((n) => n.remove());
+  participantsList.querySelectorAll('.vol-open').forEach((n) => n.classList.remove('vol-open'));
+}
+
+function togglePeerPanel(rowEl, participant) {
+  const alreadyOpen = rowEl.classList.contains('vol-open');
+  closePeerPanels();
+  if (alreadyOpen) return;
+
+  const prefs = peerPrefs(participant.identity);
+  const pct = Math.round(prefs.volume * 100);
+
+  const panel = document.createElement('div');
+  panel.className = 'peer-panel';
+  // A linha é posicionada por "order", então o painel precisa do mesmo
+  // valor para ficar logo abaixo da pessoa certa
+  panel.style.order = rowEl.style.order;
+  panel.innerHTML = `
+    <div class="peer-row">
+      <input class="range" type="range" min="0" max="150" value="${pct}" />
+      <span class="range-value">${pct}%</span>
+    </div>
+    <label class="switch gate-switch">
+      <input type="checkbox" ${prefs.gate ? 'checked' : ''} />
+      <span class="track"><span class="knob"></span></span>
+      <span class="switch-label">Supressão de ruído</span>
+    </label>
+  `;
+
+  const range = panel.querySelector('.range');
+  const value = panel.querySelector('.range-value');
+  const gate = panel.querySelector('.gate-switch input');
+
+  const markRow = () =>
+    rowEl.classList.toggle('turned-down', prefs.volume !== 1 || prefs.gate);
+
+  range.addEventListener('input', () => {
+    prefs.volume = Number(range.value) / 100;
+    value.textContent = `${range.value}%`;
+    applyPeerVolume(participant);
+    markRow();
+  });
+  range.addEventListener('change', saveSettings);
+
+  gate.addEventListener('change', () => {
+    prefs.gate = gate.checked;
+    saveSettings();
+    applyPeerAudio(participant);
+    markRow();
+    toast(`Supressão de ruído ${prefs.gate ? 'ligada' : 'desligada'} para ${displayName(participant)}`);
+  });
+
+  rowEl.classList.add('vol-open');
+  rowEl.after(panel);
+}
+
+// ============================================================
+// Cadeia de áudio por participante
+// ============================================================
+//
+// Cada pessoa pode ter volume e supressão de ruído próprios. Quando a
+// supressão está desligada, deixamos o SDK tocar a faixa direto e o
+// volume vai pelo setVolume dele — caminho mais simples e barato.
+// Quando está ligada, montamos uma cadeia de Web Audio:
+//
+//   faixa → passa-alta (corta zumbido) → portão → ganho → saída
+//
+// O portão mede o volume instantâneo e fecha abaixo de um limiar, o
+// que elimina ventilador, teclado e chiado constante nas pausas. Não é
+// o mesmo que a supressão do WebRTC (que roda na captura, do outro
+// lado), mas é o que dá para fazer sobre uma faixa já recebida.
+
+const chains = new Map();   // identidade -> { ctx, gate, vol, analyser, el, data }
+
+function audioElFor(participant) {
+  return document.querySelector(`audio[data-owner="${CSS.escape(participant.identity)}"]`);
+}
+
+function applyPeerVolume(participant) {
+  const prefs = peerPrefs(participant.identity);
+  const effective = prefs.volume * settings.outVolume;
+  const chain = chains.get(participant.identity);
+
+  if (chain) {
+    chain.vol.gain.setTargetAtTime(effective, chain.ctx.currentTime, 0.02);
+  } else {
+    try { participant.setVolume(effective); } catch { /* SDK sem esse método */ }
+  }
+}
+
+function applyPeerAudio(participant) {
+  const prefs = peerPrefs(participant.identity);
+  const el = audioElFor(participant);
+  if (!el) return;
+
+  if (prefs.gate) buildChain(participant, el);
+  else destroyChain(participant.identity);
+
+  applyPeerVolume(participant);
+}
+
+function buildChain(participant, el) {
+  if (chains.get(participant.identity)) return;
+
+  const stream = el.srcObject;
+  const track = stream?.getAudioTracks?.()[0];
+  if (!track) return;
+
+  try {
+    const ctx = new AudioContext();
+    const src = ctx.createMediaStreamSource(new MediaStream([track]));
+
+    const highpass = ctx.createBiquadFilter();
+    highpass.type = 'highpass';
+    highpass.frequency.value = 90;   // abaixo disso é quase só zumbido
+
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+
+    const gate = ctx.createGain();
+    const vol = ctx.createGain();
+
+    src.connect(highpass);
+    highpass.connect(analyser);
+    highpass.connect(gate);
+    gate.connect(vol);
+    vol.connect(ctx.destination);
+
+    // O elemento do SDK continua existindo, mas em silêncio: quem toca
+    // agora é a cadeia. Sem isto, o áudio sairia duas vezes.
+    el.muted = true;
+
+    chains.set(participant.identity, {
+      ctx, gate, vol, analyser,
+      el,
+      data: new Float32Array(analyser.fftSize),
+      open: true,
+    });
+  } catch (err) {
+    console.error('Não foi possível montar a cadeia de áudio:', err);
+  }
+}
+
+function destroyChain(identity) {
+  const chain = chains.get(identity);
+  if (!chain) return;
+  chains.delete(identity);
+  chain.el.muted = false;
+  chain.ctx.close().catch(() => {});
+}
+
+// Um único laço cuida de todos os portões abertos
+const GATE_OPEN = 0.014;    // acima disso é voz
+const GATE_CLOSE = 0.008;   // abaixo disso é ruído de fundo
+
+function runGates() {
+  for (const [, chain] of chains) {
+    const { analyser, data, gate, ctx } = chain;
+    analyser.getFloatTimeDomainData(data);
+
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+    const rms = Math.sqrt(sum / data.length);
+
+    // Histerese: limiares diferentes para abrir e fechar, senão o
+    // portão ficaria batendo em volumes próximos do limite.
+    if (chain.open && rms < GATE_CLOSE) chain.open = false;
+    else if (!chain.open && rms > GATE_OPEN) chain.open = true;
+
+    // Fechar devagar e abrir rápido: cortar o começo de uma palavra
+    // incomoda muito mais do que deixar escapar um pouco de ruído.
+    gate.gain.setTargetAtTime(chain.open ? 1 : 0, ctx.currentTime, chain.open ? 0.01 : 0.12);
+  }
+}
+
 // ---------- Anéis de voz, quadro a quadro ----------
 
 let levelRaf = null;
@@ -533,6 +740,8 @@ function startLevelLoop() {
 
   const tick = () => {
     if (!room) return;
+
+    runGates();
 
     const all = [room.localParticipant, ...room.remoteParticipants.values()];
     for (const p of all) {
@@ -592,9 +801,9 @@ async function toggleMic() {
 
 micBtn.addEventListener('click', toggleMic);
 
-// Publica (ou republica) o microfone com os ajustes atuais.
-// O SDK continua dono da faixa — o que garante que mudo, estado e
-// indicador de voz sigam funcionando. O ganho entra depois, por cima.
+// Publica (ou republica) o microfone com os ajustes atuais. O SDK
+// continua dono da faixa — o que garante que mudo, estado e indicador
+// de voz sigam funcionando. O ganho entra depois, por cima.
 async function applyMicSettings({ silent = false } = {}) {
   if (!room) return;
 
@@ -629,7 +838,6 @@ async function applyMicSettings({ silent = false } = {}) {
   syncParticipants();
 }
 
-// Intercala um GainNode entre a captura e o que é enviado.
 async function applyGain() {
   const pub = [...room.localParticipant.trackPublications.values()]
     .find((p) => p.source === Track.Source.Microphone);
@@ -715,7 +923,6 @@ settingsBtn.addEventListener('click', openSettings);
 closeSettings.addEventListener('click', () => closeModal(settingsDialog));
 closeSettings2.addEventListener('click', () => closeModal(settingsDialog));
 
-// Nome de exibição
 async function saveDisplayName() {
   const name = displayNameInput.value.trim();
   if (!room || !name) return;
@@ -725,6 +932,7 @@ async function saveDisplayName() {
     await room.localParticipant.setName(name);
     myUsername = name;
     syncParticipants();
+    renderShareBar();
     settingsStatus.textContent = 'Nome atualizado.';
     toast('Nome atualizado');
   } catch (err) {
@@ -740,14 +948,12 @@ displayNameInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); saveDisplayName(); }
 });
 
-// Dispositivo de entrada
 micSelect.addEventListener('change', () => {
   settings.micId = micSelect.value;
   saveSettings();
   applyMicSettings();
 });
 
-// Dispositivo de saída
 speakerSelect.addEventListener('change', async () => {
   settings.spkId = speakerSelect.value;
   saveSettings();
@@ -762,21 +968,16 @@ speakerSelect.addEventListener('change', async () => {
 
 // Ganho: aplica só ao soltar o controle, para não republicar a faixa
 // a cada pixel arrastado
-micGain.addEventListener('input', () => {
-  micGainValue.textContent = `${micGain.value}%`;
-});
+micGain.addEventListener('input', () => { micGainValue.textContent = `${micGain.value}%`; });
 micGain.addEventListener('change', () => {
   settings.gain = Number(micGain.value) / 100;
   saveSettings();
   applyMicSettings();
 });
 
-// Volume de saída
 function applyOutputVolume() {
   if (!room) return;
-  for (const p of room.remoteParticipants.values()) {
-    try { p.setVolume(settings.outVolume); } catch { /* SDK sem esse método */ }
-  }
+  for (const p of room.remoteParticipants.values()) applyPeerVolume(p);
 }
 
 outputVolume.addEventListener('input', () => {
@@ -786,7 +987,6 @@ outputVolume.addEventListener('input', () => {
 });
 outputVolume.addEventListener('change', saveSettings);
 
-// Processamento de áudio
 for (const [el, key] of [[optNoise, 'noise'], [optEcho, 'echo'], [optAgc, 'agc']]) {
   el.addEventListener('change', () => {
     settings[key] = el.checked;
@@ -803,15 +1003,17 @@ try {
   const prefs = JSON.parse(localStorage.getItem(SHARE_PREFS_KEY) || '{}');
   if (prefs.quality) qualitySelect.value = prefs.quality;
   if (prefs.mode) modeSelect.value = prefs.mode;
+  if (typeof prefs.audio === 'boolean') shareAudioToggle.checked = prefs.audio;
 } catch { /* idem */ }
 
 function saveSharePrefs() {
   localStorage.setItem(SHARE_PREFS_KEY, JSON.stringify({
-    quality: qualitySelect.value, mode: modeSelect.value,
+    quality: qualitySelect.value, mode: modeSelect.value, audio: shareAudioToggle.checked,
   }));
 }
 qualitySelect.addEventListener('change', saveSharePrefs);
 modeSelect.addEventListener('change', saveSharePrefs);
+shareAudioToggle.addEventListener('change', saveSharePrefs);
 
 screenshareBtn.addEventListener('click', async () => {
   if (!room) return;
@@ -917,8 +1119,8 @@ confirmPicker.addEventListener('click', () => {
 });
 
 // A qualidade é limitada em dois lugares independentes, e os dois
-// precisam subir juntos: a CAPTURA (o que o Electron entrega, via
-// getUserMedia) e a PUBLICAÇÃO (o que o LiveKit codifica e envia).
+// precisam subir juntos: a CAPTURA (o que o Electron entrega) e a
+// PUBLICAÇÃO (o que o LiveKit codifica e envia).
 const SHARE_QUALITY = {
   '720p30':  { w: 1280, h: 720,  fps: 30, bitrate: 2500000 },
   '1080p30': { w: 1920, h: 1080, fps: 30, bitrate: 5000000 },
@@ -926,24 +1128,64 @@ const SHARE_QUALITY = {
   '1440p60': { w: 2560, h: 1440, fps: 60, bitrate: 12000000 },
 };
 
+// Caminho legado: captura só vídeo, com controle fino de resolução.
+// É o que já funcionava antes de existir a opção de áudio.
+function captureVideoOnly(sourceId, q) {
+  return navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: {
+      mandatory: {
+        chromeMediaSource: 'desktop',
+        chromeMediaSourceId: sourceId,
+        maxWidth: q.w,
+        maxHeight: q.h,
+        maxFrameRate: q.fps,
+      },
+    },
+  });
+}
+
+// Caminho com áudio: o loopback do sistema só pode ser concedido pelo
+// processo principal, então avisamos qual fonte foi escolhida e
+// deixamos o handler do main.js montar o stream.
+async function captureWithAudio(sourceId, q) {
+  await ipcRenderer.invoke('prepare-share', { id: sourceId, audio: true });
+  return navigator.mediaDevices.getDisplayMedia({
+    video: { width: { max: q.w }, height: { max: q.h }, frameRate: { max: q.fps } },
+    audio: true,
+  });
+}
+
 async function startScreenShare(sourceId) {
   const q = SHARE_QUALITY[qualitySelect.value] || SHARE_QUALITY['1080p30'];
   const degradationPreference = modeSelect.value;
+  const wantAudio = shareAudioToggle.checked;
+
+  let stream = null;
+  let audioFailed = false;
+
+  if (wantAudio) {
+    try {
+      stream = await captureWithAudio(sourceId, q);
+      if (!stream.getAudioTracks().length) audioFailed = true;
+    } catch (err) {
+      console.error('Captura com áudio falhou, tentando sem:', err);
+      audioFailed = true;
+      stream = null;
+    }
+  }
+
+  if (!stream) {
+    try {
+      stream = await captureVideoOnly(sourceId, q);
+    } catch (err) {
+      console.error('Erro ao compartilhar tela:', err);
+      toast('Não foi possível compartilhar essa fonte.', true);
+      return;
+    }
+  }
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: {
-        mandatory: {
-          chromeMediaSource: 'desktop',
-          chromeMediaSourceId: sourceId,
-          maxWidth: q.w,
-          maxHeight: q.h,
-          maxFrameRate: q.fps,
-        },
-      },
-    });
-
     const videoTrack = stream.getVideoTracks()[0];
 
     // Sem contentHint o Chromium trata captura de tela como "detalhe" e
@@ -964,6 +1206,14 @@ async function startScreenShare(sourceId) {
       screenShareEncoding: { maxBitrate: q.bitrate, maxFramerate: q.fps },
     });
 
+    const audioTrack = stream.getAudioTracks()[0];
+    if (audioTrack) {
+      await room.localParticipant.publishTrack(audioTrack, {
+        source: Track.Source.ScreenShareAudio,
+        name: 'screen-audio',
+      });
+    }
+
     localScreenStream = stream;
     isSharingScreen = true;
     screenshareBtn.classList.add('on');
@@ -971,15 +1221,28 @@ async function startScreenShare(sourceId) {
 
     const video = document.createElement('video');
     video.autoplay = true;
-    video.muted = true;
-    video.srcObject = stream;
-    showShare(video, 'local', 'Você está compartilhando');
+    video.muted = true;   // o próprio áudio já sai pelas caixas
+    video.srcObject = new MediaStream([videoTrack]);
+
+    addShare('local', {
+      name: `${displayName(room.localParticipant)} (você)`,
+      element: video,
+      hasAudio: Boolean(audioTrack),
+      participant: room.localParticipant,
+    });
 
     videoTrack.addEventListener('ended', () => stopScreenShare());
-    toast(`Compartilhando em ${qualitySelect.value.replace('p', 'p · ')} fps`);
+
+    if (wantAudio && audioFailed) {
+      toast('Compartilhando sem áudio: o sistema não liberou a captura.', true);
+    } else {
+      toast(`Compartilhando em ${qualitySelect.value.replace('p', 'p · ')} fps` +
+            (audioTrack ? ' com áudio' : ''));
+    }
   } catch (err) {
-    console.error('Erro ao compartilhar tela:', err);
-    toast('Não foi possível compartilhar essa fonte.', true);
+    console.error('Erro ao publicar a tela:', err);
+    stream.getTracks().forEach((t) => t.stop());
+    toast('Não foi possível publicar a transmissão.', true);
   }
 }
 
@@ -987,9 +1250,9 @@ async function stopScreenShare() {
   if (!room) return;
 
   for (const pub of room.localParticipant.trackPublications.values()) {
-    if (pub.source === Track.Source.ScreenShare && pub.track) {
-      await room.localParticipant.unpublishTrack(pub.track);
-    }
+    const isShare = pub.source === Track.Source.ScreenShare ||
+                    pub.source === Track.Source.ScreenShareAudio;
+    if (isShare && pub.track) await room.localParticipant.unpublishTrack(pub.track);
   }
 
   if (localScreenStream) {
@@ -1001,36 +1264,101 @@ async function stopScreenShare() {
   screenshareBtn.classList.remove('on');
   screenshareBtn.title = 'Compartilhar tela';
 
-  if (shareView.querySelector('video[data-owner="local"]')) showTiles();
+  removeShare('local');
   toast('Compartilhamento encerrado');
 }
 
 // ============================================================
-// Palco
+// Palco: várias transmissões ao mesmo tempo
 // ============================================================
 
-const isShareVisible = () => !shareView.classList.contains('hidden');
-
-function showTiles() {
-  shareView.querySelectorAll('video').forEach((v) => v.remove());
-  shareView.classList.add('hidden');
-  tiles.classList.remove('dimmed');
-  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+function addShare(key, info) {
+  shares.set(key, info);
+  // Quem acabou de começar a transmitir vira o foco
+  activeShareKey = key;
+  renderStage();
 }
 
-function showShare(videoEl, owner, label) {
-  shareView.querySelectorAll('video').forEach((v) => v.remove());
-  videoEl.dataset.owner = owner;
-  shareView.insertBefore(videoEl, shareView.firstChild);
+function removeShare(key) {
+  const share = shares.get(key);
+  if (!share) return;
 
-  stageBadgeText.textContent = label;
+  share.element?.remove();
+  shares.delete(key);
+
+  if (activeShareKey === key) {
+    activeShareKey = shares.size ? [...shares.keys()][0] : null;
+  }
+  renderStage();
+}
+
+function selectShare(key) {
+  if (!shares.has(key) || activeShareKey === key) return;
+  activeShareKey = key;
+  renderStage();
+}
+
+function renderStage() {
+  const share = activeShareKey ? shares.get(activeShareKey) : null;
+
+  // Sem ninguém transmitindo: volta para a grade de participantes
+  if (!share) {
+    shareView.querySelectorAll('video').forEach((v) => v.remove());
+    shareView.classList.add('hidden');
+    tiles.classList.remove('dimmed');
+    streamVolWrap.classList.remove('open');
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    renderShareBar();
+    return;
+  }
+
+  // Só o vídeo em foco fica no DOM. Com adaptiveStream ligado, o
+  // LiveKit pausa o recebimento das faixas que não estão sendo
+  // exibidas — então as outras transmissões não gastam banda.
+  const current = shareView.querySelector('video');
+  if (current !== share.element) {
+    shareView.querySelectorAll('video').forEach((v) => v.remove());
+    shareView.insertBefore(share.element, shareView.firstChild);
+    shareView.style.animation = 'none';
+    void shareView.offsetWidth;
+    shareView.style.animation = '';
+  }
+
+  stageBadgeText.textContent = share.name;
   shareView.classList.remove('hidden');
   tiles.classList.add('dimmed');
 
-  // Reinicia a animação de entrada do vídeo
-  shareView.style.animation = 'none';
-  void shareView.offsetWidth;
-  shareView.style.animation = '';
+  // O controle de volume só faz sentido se a transmissão tiver som
+  streamVolWrap.classList.toggle('hidden', !share.hasAudio || share.participant === room?.localParticipant);
+  if (!share.hasAudio) streamVolWrap.classList.remove('open');
+
+  renderShareBar();
+}
+
+function renderShareBar() {
+  // Com uma transmissão só não há o que escolher
+  if (shares.size < 2) {
+    shareBar.classList.add('hidden');
+    shareBar.innerHTML = '';
+    return;
+  }
+
+  shareBar.innerHTML = '';
+  for (const [key, share] of shares) {
+    const name = share.participant ? displayName(share.participant) : share.name;
+
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'share-chip' + (key === activeShareKey ? ' active' : '');
+    chip.innerHTML = `
+      <span class="dot" style="background:${colorFor(name)}">${escapeHtml(initialsOf(name))}</span>
+      <span class="nm">${escapeHtml(share.name)}</span>
+      ${share.hasAudio ? `<span class="audio-ic">${icon('ic-speaker')}</span>` : ''}
+    `;
+    chip.addEventListener('click', () => selectShare(key));
+    shareBar.appendChild(chip);
+  }
+  shareBar.classList.remove('hidden');
 }
 
 function toggleFullscreen() {
@@ -1045,20 +1373,78 @@ document.addEventListener('fullscreenchange', () => {
   fullscreenBtn.title = on ? 'Sair da tela cheia (Esc)' : 'Tela cheia (F)';
 });
 
+// Volume da transmissão em foco
+streamVolBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  streamVolWrap.classList.toggle('open');
+});
+document.addEventListener('click', (e) => {
+  if (!streamVolWrap.contains(e.target)) streamVolWrap.classList.remove('open');
+});
+
+streamVol.addEventListener('input', () => {
+  settings.streamVolume = Number(streamVol.value) / 100;
+  streamVolValue.textContent = `${streamVol.value}%`;
+  applyStreamVolume();
+});
+streamVol.addEventListener('change', saveSettings);
+
+function applyStreamVolume() {
+  const share = activeShareKey ? shares.get(activeShareKey) : null;
+  if (!share?.participant || share.participant === room?.localParticipant) return;
+  try {
+    share.participant.setVolume(settings.streamVolume, Track.Source.ScreenShareAudio);
+  } catch { /* SDK sem esse método */ }
+}
+
+// ---------- Faixas recebidas ----------
+
 function handleTrackSubscribed(track, publication, participant) {
   if (track.kind === Track.Kind.Video) {
-    showShare(track.attach(), participant.identity, `${displayName(participant)} está compartilhando`);
-  } else if (track.kind === Track.Kind.Audio) {
-    const el = track.attach();
-    el.dataset.owner = participant.identity;
-    document.body.appendChild(el); // áudio não precisa aparecer na tela
-    applyOutputVolume();
+    // O áudio da transmissão pode ter chegado antes do vídeo, então
+    // não dá para assumir que ainda não existe
+    const hasAudio = [...participant.trackPublications.values()]
+      .some((pub) => pub.source === Track.Source.ScreenShareAudio && pub.isSubscribed);
+
+    addShare(participant.sid, {
+      name: `${displayName(participant)} está compartilhando`,
+      element: track.attach(),
+      hasAudio,
+      participant,
+    });
+    return;
+  }
+
+  if (track.kind !== Track.Kind.Audio) return;
+
+  const el = track.attach();
+  el.dataset.owner = participant.identity;
+  document.body.appendChild(el); // áudio não precisa aparecer na tela
+
+  if (publication.source === Track.Source.ScreenShareAudio) {
+    const share = shares.get(participant.sid);
+    if (share) {
+      share.hasAudio = true;
+      renderStage();
+    }
+    applyStreamVolume();
+  } else {
+    // Microfone: aplica volume e supressão individuais desta pessoa
+    applyPeerAudio(participant);
   }
 }
 
-function handleTrackUnsubscribed(track) {
+function handleTrackUnsubscribed(track, publication, participant) {
   track.detach().forEach((el) => el.remove());
-  if (!shareView.querySelector('video')) showTiles();
+
+  if (track.kind === Track.Kind.Video) {
+    removeShare(participant.sid);
+  } else if (publication.source === Track.Source.ScreenShareAudio) {
+    const share = shares.get(participant.sid);
+    if (share) { share.hasAudio = false; renderStage(); }
+  } else {
+    destroyChain(participant.identity);
+  }
 }
 
 // ============================================================
@@ -1148,14 +1534,10 @@ function handleDataReceived(payload, participant) {
 
 function renderTyping() {
   const now = Date.now();
-  const names = [...typingUntil.entries()].filter(([, t]) => t > now).map(([n]) => n);
-
   for (const [name, t] of typingUntil) if (t <= now) typingUntil.delete(name);
+  const names = [...typingUntil.keys()];
 
-  if (!names.length) {
-    typingEl.classList.add('hidden');
-    return;
-  }
+  if (!names.length) { typingEl.classList.add('hidden'); return; }
   typingText.textContent = names.length === 1
     ? `${names[0]} está digitando`
     : `${names.length} pessoas estão digitando`;
@@ -1390,10 +1772,15 @@ function handleDisconnected() {
     localScreenStream = null;
   }
   disposeGainChain();
+  for (const identity of [...chains.keys()]) destroyChain(identity);
   stopStatsLoop();
   stopLevelLoop();
 
   while (openModals.length) closeTopModal();
+
+  shares.clear();
+  activeShareKey = null;
+  renderStage();
 
   document.querySelectorAll('body > audio').forEach((el) => el.remove());
   chatMessages.innerHTML = '';
@@ -1404,7 +1791,6 @@ function handleDisconnected() {
 
   screenshareBtn.classList.remove('on');
   setMicButton(true);
-  showTiles();
   reconnectBanner.classList.add('hidden');
   titlebarRoom.classList.add('hidden');
   chatUnread.classList.add('hidden');
@@ -1412,3 +1798,5 @@ function handleDisconnected() {
   switchScreen(mainScreen, joinScreen);
   clearError();
 }
+
+renderStage();

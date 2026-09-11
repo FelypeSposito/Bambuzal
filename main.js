@@ -54,7 +54,41 @@ function createWindow() {
       callback(false);
     }
   });
+
+  // Captura de tela COM áudio do sistema.
+  //
+  // O áudio de loopback (o que sai pelas caixas) não é acessível pelo
+  // renderer sozinho: só o processo principal pode concedê-lo, através
+  // deste handler. O renderer avisa antes qual fonte escolheu, via
+  // "prepare-share", e depois chama getDisplayMedia — é esta função
+  // que decide o que realmente será entregue.
+  //
+  // 'loopback' é suportado apenas no Windows. Em outros sistemas o
+  // pedido segue sem áudio, em vez de falhar.
+  session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
+    try {
+      const sources = await desktopCapturer.getSources({ types: ['window', 'screen'] });
+      const chosen = sources.find((s) => s.id === pendingShare?.id) || sources[0];
+
+      if (!chosen) return callback({});
+
+      const wantsAudio = pendingShare?.audio && process.platform === 'win32';
+      callback({ video: chosen, audio: wantsAudio ? 'loopback' : undefined });
+    } catch (err) {
+      console.error('Falha ao preparar a captura de tela:', err);
+      callback({});
+    }
+  });
 }
+
+// Qual fonte o usuário escolheu no seletor do app, e se pediu áudio.
+// Fica aqui porque o handler acima roda no processo principal.
+let pendingShare = null;
+
+ipcMain.handle('prepare-share', (_event, payload) => {
+  pendingShare = payload || null;
+  return process.platform === 'win32';
+});
 
 // Lista as janelas/telas disponíveis para compartilhar.
 // O renderer chama isso via preload.js -> ipcRenderer.
