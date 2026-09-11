@@ -1,15 +1,17 @@
 {
   "name": "bambuzal",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Bambuzal — voz, chat de texto e compartilhamento de tela para o seu grupo",
   "main": "main.js",
   "author": "Sposito",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win",
+    "release": "electron-builder --win --publish always"
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "livekit-client": "^2.5.0"
   },
   "devDependencies": {
@@ -19,6 +21,13 @@
   "build": {
     "appId": "com.sposito.bambuzal",
     "productName": "Bambuzal",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "FelypeSposito",
+        "repo": "Bambuzal"
+      }
+    ],
     "win": {
       "target": "nsis",
       "icon": "build/icon.png"

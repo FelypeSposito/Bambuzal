@@ -3,6 +3,7 @@
 // microfone e captura de tela (necessárias para voz e screen share).
 
 const { app, BrowserWindow, Menu, ipcMain, desktopCapturer, session } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 
 let mainWindow;
@@ -35,7 +36,10 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    setupUpdates(mainWindow);
+  });
 
   // Por segurança, mesmo sendo um app confiável: nunca deixa esta janela
   // navegar para um site externo nem abrir novas janelas para fora do app.
@@ -88,6 +92,48 @@ let pendingShare = null;
 ipcMain.handle('prepare-share', (_event, payload) => {
   pendingShare = payload || null;
   return process.platform === 'win32';
+});
+
+ipcMain.handle('app-version', () => app.getVersion());
+
+// ---------- Atualização automática ----------
+//
+// O app consulta os Releases do repositório no GitHub, compara com a
+// versão instalada e baixa a nova em segundo plano. A instalação só
+// acontece quando o usuário aceita reiniciar (ou ao fechar o app).
+//
+// Só funciona no app empacotado: em desenvolvimento não existe versão
+// instalada com que comparar, e o updater reclamaria.
+
+function setupUpdates(win) {
+  if (!app.isPackaged) return;
+
+  const send = (payload) => {
+    if (win && !win.isDestroyed()) win.webContents.send('update-status', payload);
+  };
+
+  autoUpdater.autoDownload = true;
+  // Se a pessoa não reiniciar na hora, a atualização entra no próximo
+  // fechamento do app — sem pedir nada de novo.
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('update-available', (info) => send({ state: 'downloading', version: info.version, percent: 0 }));
+  autoUpdater.on('download-progress', (p) => send({ state: 'downloading', percent: Math.round(p.percent) }));
+  autoUpdater.on('update-downloaded', (info) => send({ state: 'ready', version: info.version }));
+  autoUpdater.on('error', (err) => {
+    // Falha de atualização nunca pode atrapalhar quem só quer conversar
+    console.error('Atualização falhou:', err);
+    send({ state: 'idle' });
+  });
+
+  const check = () => autoUpdater.checkForUpdates().catch(() => {});
+  check();
+  // Reconfere de tempos em tempos, para quem deixa o app aberto por dias
+  setInterval(check, 2 * 60 * 60 * 1000);
+}
+
+ipcMain.handle('install-update', () => {
+  autoUpdater.quitAndInstall();
 });
 
 // Lista as janelas/telas disponíveis para compartilhar.

@@ -1799,4 +1799,56 @@ function handleDisconnected() {
   clearError();
 }
 
+// ============================================================
+// Atualização automática
+// ============================================================
+
+const updateBanner = $('update-banner');
+const updateText = $('update-text');
+const updateSpinner = $('update-spinner');
+const updateInstall = $('update-install');
+
+ipcRenderer.invoke('app-version')
+  .then((v) => { $('app-version').textContent = `v${v}`; })
+  .catch(() => {});
+
+ipcRenderer.on('update-status', (_event, status) => {
+  if (!status || status.state === 'idle') {
+    updateBanner.classList.add('hidden');
+    return;
+  }
+
+  if (status.state === 'downloading') {
+    updateSpinner.classList.remove('hidden');
+    updateInstall.classList.add('hidden');
+    updateText.textContent = status.percent
+      ? `Baixando atualização… ${status.percent}%`
+      : 'Baixando atualização…';
+    updateBanner.classList.remove('hidden');
+    return;
+  }
+
+  if (status.state === 'ready') {
+    updateSpinner.classList.add('hidden');
+    updateInstall.classList.remove('hidden');
+    updateText.textContent = `Versão ${status.version} pronta para instalar`;
+    updateBanner.classList.remove('hidden');
+  }
+});
+
+updateInstall.addEventListener('click', () => {
+  // Sair no meio de uma conversa seria grosseiro: avisa antes
+  if (room) {
+    askConfirm({
+      title: 'Reiniciar para atualizar?',
+      text: 'Você vai sair da sala e o app reabre já atualizado.',
+      okLabel: 'Reiniciar',
+      danger: false,
+      onAccept: () => ipcRenderer.invoke('install-update'),
+    });
+  } else {
+    ipcRenderer.invoke('install-update');
+  }
+});
+
 renderStage();

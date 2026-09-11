@@ -130,6 +130,40 @@ input, button, textarea, select { font-family: inherit; }
 }
 .titlebar-room::before { content: "— "; }
 
+.titlebar-version {
+  margin-left: auto;
+  /* Deixa livre o canto onde o Windows desenha os botões da janela */
+  margin-right: 140px;
+  font-size: 11px;
+  color: var(--label-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Faixa de atualização --------------------------------------- */
+
+.update-banner {
+  position: fixed;
+  top: calc(var(--titlebar-h) + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px 9px 16px;
+  border-radius: 999px;
+  background: rgba(10, 132, 255, 0.16);
+  border: 0.5px solid rgba(10, 132, 255, 0.42);
+  backdrop-filter: blur(24px) saturate(180%);
+  color: #7cc0ff;
+  font-size: 12.5px;
+  font-weight: 560;
+  z-index: 150;
+  animation: drop-in 460ms var(--ease-back) both;
+}
+.update-banner .spinner { border-color: rgba(10, 132, 255, 0.3); border-top-color: var(--blue); }
+
+.btn-xs { height: 28px; padding: 0 13px; font-size: 12.5px; border-radius: 999px; }
+
 #app { display: flex; flex-direction: column; height: 100%; }
 
 .screen {
