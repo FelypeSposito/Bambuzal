@@ -130,6 +130,7 @@ const settings = {
   noise: true, echo: true, agc: true,
   chatCollapsed: false,
   peers: {},          // identidade -> { volume, nr, streamVolume }
+  myAvatar: { icon: '', color: '' },
 };
 
 // ============================================================
@@ -185,6 +186,48 @@ function initialsOf(name) {
 
 // O nome exibido pode mudar em tempo real; a identidade do token, não.
 const displayName = (p) => p?.name || p?.identity || 'sem nome';
+
+// ---------- Aparência do participante ----------
+
+const AVATAR_ICONS = [
+  '🐼', '🦊', '🐸', '🐵', '🐱', '🐶', '🦁', '🐯', '🐨', '🐷',
+  '🐙', '🦄', '🐢', '🦉', '🐝', '🦖', '🌵', '🍀', '🍄', '🌙',
+  '⭐', '⚡', '🔥', '🎧', '🎮', '🎲', '🍕', '☕', '🚀', '👾',
+];
+
+// A aparência viaja nos metadados do participante, que o LiveKit
+// replica para todos e mantém sincronizado. Guardar só localmente
+// faria cada pessoa ver um avatar diferente da mesma pessoa.
+function avatarOf(p) {
+  const name = displayName(p);
+  let meta = null;
+  try { meta = p?.metadata ? JSON.parse(p.metadata) : null; } catch { /* metadados de outra versão */ }
+
+  return {
+    icon: meta?.icon || '',
+    color: meta?.color || colorFor(name),
+    initials: initialsOf(name),
+  };
+}
+
+// Preenche um elemento .av / .tile-av com o ícone ou as iniciais
+function paintAvatar(el, p) {
+  const { icon: glyph, color, initials } = avatarOf(p);
+  el.style.background = color;
+  const slot = el.querySelector('.ini');
+  slot.textContent = glyph || initials;
+  slot.classList.toggle('glyph', Boolean(glyph));
+}
+
+async function publishAppearance() {
+  if (!room) return;
+  const { icon: glyph, color } = settings.myAvatar || {};
+  try {
+    await room.localParticipant.setMetadata(JSON.stringify({ icon: glyph || '', color: color || '' }));
+  } catch (err) {
+    console.error('Não foi possível publicar a aparência:', err);
+  }
+}
 
 function saveSettings() {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -425,6 +468,7 @@ async function connectToRoom(url, token, roomName) {
       addSystemMessage(`${displayName(p)} saiu`);
     })
     .on(RoomEvent.ParticipantNameChanged, () => { syncParticipants(); renderShareBar(); })
+    .on(RoomEvent.ParticipantMetadataChanged, syncParticipants)
     .on(RoomEvent.TrackSubscribed, handleTrackSubscribed)
     .on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed)
     .on(RoomEvent.TrackMuted, syncParticipants)
@@ -441,6 +485,7 @@ async function connectToRoom(url, token, roomName) {
 
   await room.connect(url, token);
   await applyMicSettings({ silent: true });
+  await publishAppearance();
 
   displayNameInput.value = displayName(room.localParticipant);
   renderStage();
@@ -505,18 +550,31 @@ function makeRow(p) {
   // Duas portas para o mesmo menu: o botão (descobrível) e o clique
   // com o botão direito (rápido, para quem já sabe)
   const isLocal = room && p === room.localParticipant;
-  if (!isLocal) {
-    const open = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const r = el.getBoundingClientRect();
-      openPeerMenu(p, e.clientX || r.right, e.clientY || r.bottom);
-    };
-    el.querySelector('.vol-btn').addEventListener('click', open);
-    el.addEventListener('contextmenu', open);
+  const btn = el.querySelector('.vol-btn');
+
+  if (isLocal) {
+    // O próprio usuário tem opções diferentes: nome, microfone e
+    // captação — nada de volume, que só faz sentido para os outros
+    btn.innerHTML = icon('ic-gear');
+    btn.title = 'Suas opções';
+    btn.setAttribute('aria-label', 'Suas opções');
+    el.classList.add('is-me');
   } else {
-    el.querySelector('.vol-btn').remove();
+    btn.title = 'Áudio desta pessoa';
   }
+
+  const open = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const r = el.getBoundingClientRect();
+    const x = e.clientX || r.right;
+    const y = e.clientY || r.bottom;
+    if (isLocal) openSelfMenu(x, y);
+    else openPeerMenu(p, x, y);
+  };
+
+  btn.addEventListener('click', open);
+  el.addEventListener('contextmenu', open);
 
   return el;
 }
@@ -526,8 +584,7 @@ function updateRow(el, p) {
   const isLocal = room && p === room.localParticipant;
 
   el.classList.toggle('speaking', Boolean(p.isSpeaking));
-  el.querySelector('.av').style.background = colorFor(name);
-  el.querySelector('.ini').textContent = initialsOf(name);
+  paintAvatar(el.querySelector('.av'), p);
   el.querySelector('.name').textContent = name + (isLocal ? ' (você)' : '');
 
   const slot = el.querySelector('.mute-slot');
@@ -564,8 +621,7 @@ function updateTile(el, p) {
   const isLocal = room && p === room.localParticipant;
 
   el.classList.toggle('speaking', Boolean(p.isSpeaking));
-  el.querySelector('.tile-av').style.background = colorFor(name);
-  el.querySelector('.ini').textContent = initialsOf(name);
+  paintAvatar(el.querySelector('.tile-av'), p);
   el.querySelector('.nm').textContent = name + (isLocal ? ' (você)' : '');
 
   const slot = el.querySelector('.mute-slot');
@@ -610,10 +666,16 @@ function buildCtxNode(item) {
   if (item.type === 'header') {
     const el = document.createElement('div');
     el.className = 'ctx-header';
-    el.innerHTML = `
-      <span class="dot" style="background:${colorFor(item.label)}">${escapeHtml(initialsOf(item.label))}</span>
-      <span class="nm">${escapeHtml(item.label)}</span>
-    `;
+    el.innerHTML = `<span class="dot"><span class="ini"></span></span>
+                    <span class="nm">${escapeHtml(item.label)}</span>`;
+
+    const dot = el.querySelector('.dot');
+    if (item.participant) {
+      paintAvatar(dot, item.participant);
+    } else {
+      dot.style.background = colorFor(item.label);
+      dot.querySelector('.ini').textContent = initialsOf(item.label);
+    }
     return el;
   }
 
@@ -712,7 +774,7 @@ function openPeerMenu(participant, x, y) {
   const share = shares.get(participant.sid);
 
   const items = [
-    { type: 'header', label: name },
+    { type: 'header', label: name, participant },
     { type: 'sep' },
     { type: 'label', label: 'Volume da voz' },
     {
@@ -757,6 +819,70 @@ function openPeerMenu(participant, x, y) {
   }
 
   openCtx(items, x, y);
+}
+
+// Menu do próprio usuário: identidade e captação. Volume não entra
+// aqui porque você não se ouve — isso só faz sentido para os outros.
+function openSelfMenu(x, y) {
+  if (!room) return;
+  const me = room.localParticipant;
+
+  const toggleCapture = (key, label) => ({
+    label,
+    checkable: true,
+    on: settings[key],
+    keepOpen: true,
+    onClick: () => {
+      settings[key] = !settings[key];
+      saveSettings();
+      applyMicSettings();
+      openSelfMenu(x, y);
+    },
+  });
+
+  openCtx([
+    { type: 'header', label: displayName(me), participant: me },
+    { type: 'sep' },
+    {
+      label: micEnabled ? 'Desligar microfone' : 'Ligar microfone',
+      icon: micEnabled ? 'ic-mic-off' : 'ic-mic',
+      hint: 'M',
+      onClick: toggleMic,
+    },
+    { type: 'label', label: 'Ganho do microfone' },
+    {
+      type: 'slider',
+      value: settings.gain,
+      max: 200,
+      // Mexer no ganho republica a faixa, então só aplica ao soltar
+      onInput: (v) => { settings.gain = v; },
+      onCommit: () => { saveSettings(); applyMicSettings(); },
+    },
+    { type: 'label', label: 'Captação' },
+    toggleCapture('noise', 'Supressão de ruído'),
+    toggleCapture('echo', 'Cancelamento de eco'),
+    toggleCapture('agc', 'Volume automático'),
+    { type: 'sep' },
+    {
+      label: 'Escolher ícone…',
+      icon: 'ic-user',
+      onClick: openAvatarPicker,
+    },
+    {
+      label: 'Alterar nome…',
+      icon: 'ic-user',
+      onClick: () => {
+        openSettings();
+        setTimeout(() => { displayNameInput.focus(); displayNameInput.select(); }, 120);
+      },
+    },
+    {
+      label: 'Configurações…',
+      icon: 'ic-gear',
+      hint: ',',
+      onClick: openSettings,
+    },
+  ], x, y);
 }
 
 // ============================================================
@@ -1161,6 +1287,87 @@ for (const [el, key] of [[optNoise, 'noise'], [optEcho, 'echo'], [optAgc, 'agc']
     applyMicSettings();
   });
 }
+
+// ============================================================
+// Escolha de ícone
+// ============================================================
+
+const avatarDialog = $('avatar-dialog');
+const avatarPreview = $('avatar-preview');
+const colorGrid = $('color-grid');
+const iconGrid = $('icon-grid');
+
+let draftAvatar = { icon: '', color: '' };
+
+function paintPreview() {
+  const name = room ? displayName(room.localParticipant) : myUsername || '?';
+  avatarPreview.style.background = draftAvatar.color || colorFor(name);
+  const slot = avatarPreview.querySelector('.ini');
+  slot.textContent = draftAvatar.icon || initialsOf(name);
+  slot.classList.toggle('glyph', Boolean(draftAvatar.icon));
+
+  for (const cell of iconGrid.children) {
+    cell.classList.toggle('selected', cell.textContent === draftAvatar.icon);
+  }
+  for (const dot of colorGrid.children) {
+    dot.classList.toggle('selected', dot.dataset.color === draftAvatar.color);
+  }
+}
+
+function openAvatarPicker() {
+  draftAvatar = { ...(settings.myAvatar || { icon: '', color: '' }) };
+
+  if (!colorGrid.children.length) {
+    for (const color of AVATAR_COLORS) {
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.className = 'color-dot';
+      dot.dataset.color = color;
+      dot.style.background = color;
+      dot.style.color = color;   // o anel de seleção usa currentColor
+      dot.addEventListener('click', () => { draftAvatar.color = color; paintPreview(); });
+      colorGrid.appendChild(dot);
+    }
+  }
+
+  if (!iconGrid.children.length) {
+    for (const glyph of AVATAR_ICONS) {
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'icon-cell';
+      cell.textContent = glyph;
+      cell.addEventListener('click', () => {
+        // Clicar no que já está escolhido desmarca
+        draftAvatar.icon = draftAvatar.icon === glyph ? '' : glyph;
+        paintPreview();
+      });
+      iconGrid.appendChild(cell);
+    }
+  }
+
+  paintPreview();
+  openModal(avatarDialog);
+}
+
+async function commitAvatar() {
+  settings.myAvatar = { ...draftAvatar };
+  saveSettings();
+  await publishAppearance();
+  syncParticipants();
+}
+
+$('close-avatar').addEventListener('click', () => closeModal(avatarDialog));
+
+$('avatar-save').addEventListener('click', async () => {
+  closeModal(avatarDialog);
+  await commitAvatar();
+  toast('Ícone atualizado');
+});
+
+$('avatar-reset').addEventListener('click', () => {
+  draftAvatar = { icon: '', color: '' };
+  paintPreview();
+});
 
 // ============================================================
 // Compartilhamento de tela
@@ -1570,7 +1777,7 @@ function openStageMenu(x, y) {
   if (!share) return;
 
   const isLocal = share.participant === room?.localParticipant;
-  const items = [{ type: 'header', label: share.name }];
+  const items = [{ type: 'header', label: share.name, participant: share.participant }];
 
   if (!isLocal && share.hasAudio) {
     const prefs = peerPrefs(share.participant.identity);
@@ -1745,7 +1952,7 @@ chatForm.addEventListener('submit', (e) => {
   const text = chatText.value.trim();
   if (!text || !room) return;
 
-  addChatMessage(displayName(room.localParticipant), text, true);
+  addChatMessage(displayName(room.localParticipant), text, true, room.localParticipant);
   publish({ t: 'chat', text });
 
   chatText.value = '';
@@ -1768,7 +1975,7 @@ function handleDataReceived(payload, participant) {
 
     typingUntil.delete(author);
     renderTyping();
-    addChatMessage(author, msg.text, false);
+    addChatMessage(author, msg.text, false, participant);
   } catch (err) {
     console.error('Mensagem de chat inválida:', err);
   }
@@ -1791,7 +1998,7 @@ setInterval(renderTyping, 1000);
 const timeNow = () =>
   new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
-function addChatMessage(author, text, isMine) {
+function addChatMessage(author, text, isMine, participant) {
   clearChatEmptyState();
 
   const el = document.createElement('div');
@@ -1799,7 +2006,7 @@ function addChatMessage(author, text, isMine) {
   const grouped = lastChatAuthor === author;
   el.className = 'chat-message' + (grouped ? ' grouped' : '');
   el.innerHTML = `
-    <span class="av" style="background:${colorFor(author)}">${escapeHtml(initialsOf(author))}</span>
+    <span class="av"><span class="ini"></span></span>
     <div class="body">
       <div class="meta">
         <span class="author" style="color:${isMine ? 'var(--label)' : colorFor(author)}">
@@ -1810,6 +2017,14 @@ function addChatMessage(author, text, isMine) {
       <div class="text">${escapeHtml(text)}</div>
     </div>
   `;
+  const av = el.querySelector('.av');
+  if (participant) {
+    paintAvatar(av, participant);
+  } else {
+    av.style.background = colorFor(author);
+    av.querySelector('.ini').textContent = initialsOf(author);
+  }
+
   chatMessages.appendChild(el);
   chatMessages.scrollTop = chatMessages.scrollHeight;
   lastChatAuthor = author;

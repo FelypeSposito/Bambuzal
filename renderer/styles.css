@@ -962,6 +962,10 @@ input, button, textarea, select { font-family: inherit; }
 }
 .participant:hover .vol-btn { opacity: 1; }
 .vol-btn:hover { background: var(--fill-2); color: var(--label); }
+/* O botão do próprio usuário fica sempre visível: é o atalho para
+   nome, ícone e microfone, e esconder isso atrás do hover não ajuda */
+.participant.is-me .vol-btn { opacity: 0.75; }
+.participant.is-me:hover .vol-btn { opacity: 1; }
 /* Quem tem volume ou supressão alterados mantém o ícone visível,
    como lembrete de que aquele áudio foi mexido */
 .participant.turned-down .vol-btn { opacity: 1; color: var(--orange); }
@@ -1509,6 +1513,72 @@ input, button, textarea, select { font-family: inherit; }
 .switch input:focus-visible + .track { box-shadow: 0 0 0 3.5px rgba(10, 132, 255, 0.45); }
 .switch .switch-label { color: var(--label-2); }
 .switch:hover .switch-label { color: var(--label); }
+
+/* Escolha de ícone --------------------------------------------- */
+
+/* Quando o avatar é um emoji, ele precisa de mais corpo do que as
+   iniciais e não deve herdar o peso da fonte do rótulo */
+.ini.glyph { font-weight: 400; font-size: 1.35em; line-height: 1; }
+
+.av-preview {
+  width: 52px; height: 52px;
+  flex: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 19px;
+  font-weight: 640;
+  color: #fff;
+  transition: background 260ms var(--ease);
+}
+.av-preview .ini.glyph { font-size: 27px; }
+
+.color-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  padding: 2px 2px 14px;
+}
+.color-dot {
+  width: 30px; height: 30px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 0 var(--bg-raised), 0 0 0 0 transparent;
+  transition: transform 220ms var(--ease-back), box-shadow 220ms var(--ease);
+}
+.color-dot:hover { transform: scale(1.12); }
+.color-dot.selected {
+  transform: scale(1.12);
+  box-shadow: inset 0 0 0 3px var(--bg-raised), 0 0 0 2px currentColor;
+}
+
+.icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+  gap: 7px;
+  padding-bottom: 6px;
+}
+.icon-cell {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: var(--r-sm);
+  background: var(--fill-1);
+  font-size: 23px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1.5px transparent;
+  transition: background 160ms var(--ease), transform 200ms var(--ease-back),
+              box-shadow 160ms var(--ease);
+}
+.icon-cell:hover { background: var(--fill-2); transform: scale(1.08); }
+.icon-cell:active { transform: scale(0.94); }
+.icon-cell.selected {
+  background: rgba(10, 132, 255, 0.2);
+  box-shadow: inset 0 0 0 1.5px var(--blue);
+}
 
 /* Alertas ------------------------------------------------------ */
 

@@ -461,6 +461,36 @@
   </div>
 </div>
 
+<!-- ========================= Escolher ícone ========================= -->
+<div id="avatar-dialog" class="backdrop hidden" role="dialog" aria-modal="true"
+     aria-labelledby="avatar-title">
+  <div class="sheet sheet-md">
+    <header class="sheet-head">
+      <div class="av-preview" id="avatar-preview"><span class="ini"></span></div>
+      <div>
+        <h2 id="avatar-title">Seu ícone</h2>
+        <p>Todo mundo na sala vê a mesma coisa</p>
+      </div>
+      <button class="icon-btn" id="close-avatar" aria-label="Fechar">
+        <svg class="ic ic-sm"><use href="#ic-close" /></svg>
+      </button>
+    </header>
+
+    <div class="sheet-body">
+      <div class="ctx-label">Cor</div>
+      <div class="color-grid" id="color-grid"></div>
+
+      <div class="ctx-label">Ícone</div>
+      <div class="icon-grid" id="icon-grid"></div>
+    </div>
+
+    <footer class="sheet-foot">
+      <button id="avatar-reset" class="btn btn-secondary" type="button">Usar iniciais</button>
+      <button id="avatar-save" class="btn btn-primary" type="button">Concluído</button>
+    </footer>
+  </div>
+</div>
+
 <!-- ========================= Alerta genérico ========================= -->
 <div id="confirm-dialog" class="backdrop hidden" role="dialog" aria-modal="true"
      aria-labelledby="confirm-title">
