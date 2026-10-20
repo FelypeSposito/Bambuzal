@@ -8,12 +8,20 @@ const path = require('path');
 
 let mainWindow;
 
+// Guarda o tamanho da janela antes da tela cheia sem borda, e também
+// serve de sinal de que estamos nela
+let boundsBeforeFullscreen = null;
+
 // A barra de título é desenhada pelo próprio app (titleBarStyle
 // 'hidden'), e é ela que serve de área de arraste. Se a janela abrir
 // com o topo acima da área visível, essa faixa fica inalcançável e não
 // há como mover a janela com o mouse. Aqui garantimos que ela sempre
 // caiba na tela em que está.
 function ensureOnScreen(win) {
+  // Em tela cheia sem borda a janela cobre o monitor de propósito,
+  // inclusive a barra de tarefas — encaixá-la na área útil a quebraria
+  if (boundsBeforeFullscreen) return;
+
   const bounds = win.getBounds();
   const area = screen.getDisplayMatching(bounds).workArea;
 
@@ -57,14 +65,6 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
-  // O estado real da janela é a fonte da verdade: assim a interface
-  // acompanha mesmo quando a tela cheia é acionada por F11 ou pelo
-  // próprio Windows, e não só pelo botão do app.
-  const sendFullscreen = (on) => {
-    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('fullscreen-changed', on);
-  };
-  mainWindow.on('enter-full-screen', () => sendFullscreen(true));
-  mainWindow.on('leave-full-screen', () => sendFullscreen(false));
   // A janela nasce com show: false para evitar o flash branco, e só
   // aparece no primeiro quadro pronto. Se esse quadro demorar ou a
   // interface falhar ao carregar, sem rede de segurança o app ficaria
@@ -99,6 +99,7 @@ function createWindow() {
       log('console[' + lvl + '] ' + msg + ' (' + src + ':' + line + ')'));
     mainWindow.on('ready-to-show', () => log('window:ready-to-show'));
     mainWindow.on('show', () => log('window:show'));
+
     mainWindow.on('enter-full-screen', () => log('window:enter-full-screen'));
     mainWindow.on('leave-full-screen', () => log('window:leave-full-screen'));
   }
@@ -170,18 +171,42 @@ ipcMain.handle('app-version', () => app.getVersion());
 // overlay dos botões continua desenhado por cima. Pedir a tela cheia
 // à própria janela é o caminho nativo do Electron e funciona sempre —
 // o renderer só reage ao evento, escondendo barra lateral e chat.
-ipcMain.handle('toggle-fullscreen', () => {
+// Tela cheia SEM trocar o modo de apresentação.
+//
+// A tela cheia nativa (setFullScreen) faz o Windows trocar o modo de
+// apresentação. Com uma captura de tela ativa, no driver da AMD isso
+// corrompe o compositor inteiro: a área de trabalho toda fica
+// esverdeada, congela e acumula rastro de cursor.
+//
+// Então fazemos o que os jogos chamam de "borderless": a janela, que
+// já é sem moldura, simplesmente cresce até cobrir o monitor. Para
+// quem olha é idêntico, e nenhum modo de vídeo é tocado.
+function setBorderlessFullscreen(on) {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
-  const next = !mainWindow.isFullScreen();
-  mainWindow.setFullScreen(next);
-  return next;
-});
 
-ipcMain.handle('exit-fullscreen', () => {
-  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFullScreen()) {
-    mainWindow.setFullScreen(false);
+  if (on && !boundsBeforeFullscreen) {
+    boundsBeforeFullscreen = mainWindow.getBounds();
+    // bounds, e não workArea: queremos cobrir também a barra de tarefas
+    const display = screen.getDisplayMatching(boundsBeforeFullscreen);
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    mainWindow.setBounds(display.bounds);
+    // Sem isto a barra de tarefas continua desenhada por cima
+    mainWindow.setAlwaysOnTop(true, 'screen-saver');
+  } else if (!on && boundsBeforeFullscreen) {
+    mainWindow.setAlwaysOnTop(false);
+    mainWindow.setBounds(boundsBeforeFullscreen);
+    boundsBeforeFullscreen = null;
+  } else {
+    return Boolean(boundsBeforeFullscreen);
   }
-});
+
+  const state = Boolean(boundsBeforeFullscreen);
+  mainWindow.webContents.send('fullscreen-changed', state);
+  return state;
+}
+
+ipcMain.handle('toggle-fullscreen', () => setBorderlessFullscreen(!boundsBeforeFullscreen));
+ipcMain.handle('exit-fullscreen', () => setBorderlessFullscreen(false));
 
 // ---------- Atualização automática ----------
 //

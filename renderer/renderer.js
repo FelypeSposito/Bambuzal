@@ -133,6 +133,7 @@ const settings = {
   chatCollapsed: false,
   peers: {},          // identidade -> { volume, nr, streamVolume }
   myAvatar: { icon: '', color: '' },
+  selfPreview: false,
 };
 
 // ============================================================
@@ -1613,6 +1614,7 @@ async function startScreenShare(sourceId) {
 
     addShare('local', {
       name: `${displayName(room.localParticipant)} (você)`,
+      sourceName: allSources.find((s) => s.id === sourceId)?.name || '',
       element: video,
       hasAudio: Boolean(audioTrack),
       participant: room.localParticipant,
@@ -1699,16 +1701,50 @@ function renderStage() {
     return;
   }
 
-  // Só o vídeo em foco fica no DOM. Com adaptiveStream ligado, o
-  // LiveKit pausa o recebimento das faixas que não estão sendo
-  // exibidas — então as outras transmissões não gastam banda.
-  const current = shareView.querySelector('video');
-  if (current !== share.element) {
+  const isMine = share.participant === room?.localParticipant;
+
+  // Mostrar a própria tela de volta cria um espelho infinito quando o
+  // que está sendo compartilhado é o monitor onde o app está. Por
+  // padrão exibimos só uma confirmação; a prévia fica disponível para
+  // quem quiser conferir o que os outros estão vendo.
+  if (isMine && !settings.selfPreview) {
     shareView.querySelectorAll('video').forEach((v) => v.remove());
-    shareView.insertBefore(share.element, shareView.firstChild);
-    shareView.style.animation = 'none';
-    void shareView.offsetWidth;
-    shareView.style.animation = '';
+    if (!shareView.querySelector('.self-share')) {
+      const panel = document.createElement('div');
+      panel.className = 'self-share';
+      panel.innerHTML = `
+        <span class="glyph">${icon('ic-screen', 'ic ic-lg')}</span>
+        <h3>Você está compartilhando a sua tela</h3>
+        <p class="src"></p>
+        <div class="self-share-actions">
+          <button class="btn btn-secondary" type="button" data-act="preview">Ver prévia</button>
+          <button class="btn btn-danger" type="button" data-act="stop">Parar</button>
+        </div>
+        <p class="warn">A prévia se espelha sem fim se você estiver compartilhando este monitor.</p>
+      `;
+      panel.querySelector('[data-act="preview"]').addEventListener('click', () => {
+        settings.selfPreview = true;
+        saveSettings();
+        renderStage();
+      });
+      panel.querySelector('[data-act="stop"]').addEventListener('click', stopScreenShare);
+      shareView.insertBefore(panel, shareView.firstChild);
+    }
+    shareView.querySelector('.self-share .src').textContent = share.sourceName || '';
+  } else {
+    shareView.querySelector('.self-share')?.remove();
+
+    // Só o vídeo em foco fica no DOM. Com adaptiveStream ligado, o
+    // LiveKit pausa o recebimento das faixas que não estão sendo
+    // exibidas — então as outras transmissões não gastam banda.
+    const current = shareView.querySelector('video');
+    if (current !== share.element) {
+      shareView.querySelectorAll('video').forEach((v) => v.remove());
+      shareView.insertBefore(share.element, shareView.firstChild);
+      shareView.style.animation = 'none';
+      void shareView.offsetWidth;
+      shareView.style.animation = '';
+    }
   }
 
   stageBadgeText.textContent = share.name;
@@ -1851,6 +1887,16 @@ function openStageMenu(x, y) {
   );
 
   if (isLocal) {
+    items.push({
+      label: 'Mostrar prévia da minha tela',
+      checkable: true,
+      on: settings.selfPreview,
+      onClick: () => {
+        settings.selfPreview = !settings.selfPreview;
+        saveSettings();
+        renderStage();
+      },
+    });
     items.push({
       label: 'Parar de compartilhar',
       icon: 'ic-screen-off',
