@@ -806,6 +806,16 @@ input, button, textarea, select { font-family: inherit; }
 }
 .stage:hover .stage-tools { opacity: 1; transform: none; }
 
+/* Tela cheia: a janela já está ocupando o monitor: aqui tiramos tudo
+   que não é a transmissão. Os controles continuam aparecendo com o
+   ponteiro sobre o palco, que é como se sai daqui. */
+body.app-fullscreen .titlebar,
+body.app-fullscreen .sidebar,
+body.app-fullscreen .chat,
+body.app-fullscreen .chat-reopen { display: none; }
+
+body.app-fullscreen .stage { background: #000; }
+
 /* Barra de transmissões simultâneas -------------------------- */
 
 .share-bar {

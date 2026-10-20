@@ -56,11 +56,52 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-  mainWindow.once('ready-to-show', () => {
+
+  // O estado real da janela é a fonte da verdade: assim a interface
+  // acompanha mesmo quando a tela cheia é acionada por F11 ou pelo
+  // próprio Windows, e não só pelo botão do app.
+  const sendFullscreen = (on) => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('fullscreen-changed', on);
+  };
+  mainWindow.on('enter-full-screen', () => sendFullscreen(true));
+  mainWindow.on('leave-full-screen', () => sendFullscreen(false));
+  // A janela nasce com show: false para evitar o flash branco, e só
+  // aparece no primeiro quadro pronto. Se esse quadro demorar ou a
+  // interface falhar ao carregar, sem rede de segurança o app ficaria
+  // rodando invisível, sem janela e sem erro visível.
+  let revealed = false;
+  const reveal = () => {
+    if (revealed || mainWindow.isDestroyed()) return;
+    revealed = true;
     ensureOnScreen(mainWindow);
     mainWindow.show();
     setupUpdates(mainWindow);
+  };
+
+  mainWindow.once('ready-to-show', reveal);
+  setTimeout(reveal, 5000);
+
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    console.error('Falha ao carregar a interface:', code, desc, url);
+    reveal();
   });
+
+  // Diagnóstico opcional: defina BAMBUZAL_LOG com o caminho de um
+  // arquivo para registrar o ciclo de vida da janela e os erros do
+  // renderer. Sem a variável, nada disto roda.
+  if (process.env.BAMBUZAL_LOG) {
+    const fs = require('fs');
+    const log = (m) => { try { fs.appendFileSync(process.env.BAMBUZAL_LOG, m + '\n'); } catch {} };
+    for (const ev of ['dom-ready', 'did-finish-load', 'did-fail-load', 'render-process-gone']) {
+      mainWindow.webContents.on(ev, (...a) => log('webContents:' + ev + ' ' + JSON.stringify(a.slice(1))));
+    }
+    mainWindow.webContents.on('console-message', (_e, lvl, msg, line, src) =>
+      log('console[' + lvl + '] ' + msg + ' (' + src + ':' + line + ')'));
+    mainWindow.on('ready-to-show', () => log('window:ready-to-show'));
+    mainWindow.on('show', () => log('window:show'));
+    mainWindow.on('enter-full-screen', () => log('window:enter-full-screen'));
+    mainWindow.on('leave-full-screen', () => log('window:leave-full-screen'));
+  }
 
   // Uma tela desconectada ou trocada pode deixar a janela em
   // coordenadas que não existem mais
@@ -121,6 +162,26 @@ ipcMain.handle('prepare-share', (_event, payload) => {
 });
 
 ipcMain.handle('app-version', () => app.getVersion());
+
+// Tela cheia.
+//
+// A API de tela cheia do HTML (element.requestFullscreen) é frágil
+// aqui: a janela usa titleBarStyle 'hidden' com titleBarOverlay, e o
+// overlay dos botões continua desenhado por cima. Pedir a tela cheia
+// à própria janela é o caminho nativo do Electron e funciona sempre —
+// o renderer só reage ao evento, escondendo barra lateral e chat.
+ipcMain.handle('toggle-fullscreen', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  const next = !mainWindow.isFullScreen();
+  mainWindow.setFullScreen(next);
+  return next;
+});
+
+ipcMain.handle('exit-fullscreen', () => {
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFullScreen()) {
+    mainWindow.setFullScreen(false);
+  }
+});
 
 // ---------- Atualização automática ----------
 //

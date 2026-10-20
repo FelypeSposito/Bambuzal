@@ -344,7 +344,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (closeTopModal()) e.preventDefault();
     else if (streamVolWrap.classList.contains('open')) streamVolWrap.classList.remove('open');
-    else if (document.fullscreenElement) document.exitFullscreen();
+    else if (isFullscreen) exitFullscreen();
     return;
   }
 
@@ -1694,7 +1694,7 @@ function renderStage() {
     shareView.classList.add('hidden');
     tiles.classList.remove('dimmed');
     closeCtx();
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    if (isFullscreen) exitFullscreen();
     renderShareBar();
     return;
   }
@@ -1757,14 +1757,30 @@ function renderShareBar() {
   shareBar.classList.remove('hidden');
 }
 
-function toggleFullscreen() {
-  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-  else stage.requestFullscreen().catch(() => {});
+// Quem manda na tela cheia é a janela, no processo principal. Aqui só
+// pedimos a troca e reagimos ao estado que vier de volta.
+let isFullscreen = false;
+
+async function toggleFullscreen() {
+  try {
+    await ipcRenderer.invoke('toggle-fullscreen');
+  } catch (err) {
+    console.error('Falha ao alternar a tela cheia:', err);
+    toast('Não consegui alternar a tela cheia.', true);
+  }
+}
+
+function exitFullscreen() {
+  ipcRenderer.invoke('exit-fullscreen').catch(() => {});
 }
 
 fullscreenBtn.addEventListener('click', toggleFullscreen);
-document.addEventListener('fullscreenchange', () => {
-  const on = Boolean(document.fullscreenElement);
+
+ipcRenderer.on('fullscreen-changed', (_event, on) => {
+  isFullscreen = on;
+  // Em tela cheia o palco toma a janela inteira: barra de título,
+  // participantes e chat saem de cena
+  document.body.classList.toggle('app-fullscreen', on);
   fullscreenBtn.querySelector('use').setAttribute('href', on ? '#ic-collapse' : '#ic-expand');
   fullscreenBtn.title = on ? 'Sair da tela cheia (Esc)' : 'Tela cheia (F)';
 });
@@ -1827,8 +1843,8 @@ function openStageMenu(x, y) {
   items.push(
     { type: 'sep' },
     {
-      label: document.fullscreenElement ? 'Sair da tela cheia' : 'Tela cheia',
-      icon: document.fullscreenElement ? 'ic-collapse' : 'ic-expand',
+      label: isFullscreen ? 'Sair da tela cheia' : 'Tela cheia',
+      icon: isFullscreen ? 'ic-collapse' : 'ic-expand',
       hint: 'F',
       onClick: toggleFullscreen,
     },
